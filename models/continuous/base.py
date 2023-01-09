@@ -1,3 +1,10 @@
+# ---------------------------------------------------------------
+# Copyright (c) __________________________ 2022.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+# ---------------------------------------------------------------
+
 
 from ..constant import UNIQ_CHART_HEADS, CHART_TO_HEAD_IDX
 
@@ -11,7 +18,6 @@ from .decoder import Decoder
 
 import numpy as np
 import math
-import time
 
 from .helper import (
   unflat_tensor,
@@ -265,9 +271,6 @@ class BaseDataModel(nn.Module):
 
   def reconstruct_tab_shape(self, row_logits, col_logits, temp=1.0, eval=False):
 
-    #row_probs = F.gumbel_softmax(row_logits, tau=temp, hard=eval)
-    #col_probs = F.gumbel_softmax(col_logits, tau=temp, hard=eval)
-      
     row_probs = F.softmax(row_logits / temp, dim=-1)
     col_probs = F.softmax(col_logits / temp, dim=-1)
 
