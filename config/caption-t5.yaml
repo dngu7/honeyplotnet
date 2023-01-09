@@ -1,0 +1,16 @@
+---
+seed: 1
+model:
+  active: ['caption']
+  caption:
+    hf_model: 
+      name: google/t5-v1_1-large #770 m parameters
+torch_dist:
+  use: true
+  deepspeed: false  
+train:
+  intervals:
+    eval: 100000
+  gradient_accum_steps: 2
+batch_size_per_gpu: 
+  caption: 8

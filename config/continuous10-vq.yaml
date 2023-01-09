@@ -1,0 +1,36 @@
+---
+batch_size_per_gpu: 
+  continuous: 8
+model:
+  active: ['continuous','caption'] 
+  continuous_data:
+    encoder:
+      transformer:
+        n_layer: 4
+        n_head: 4
+    decoder:
+      transformer:
+        n_layer: 4
+        n_head: 4
+        d_kv: 8
+    disc: 
+      use: False
+    mhd:
+      use: False
+    vq:
+      name: vq
+      emb_dim1: 32
+      n_emb1: 128
+      emb_len1: 8
+  seq:
+    name: gpt 
+    gpt:
+      n_layer: 3
+      n_head: 8
+train:
+  gradient_accum_steps: 8
+  intervals:
+    snapshot: 1
+torch_dist:
+  use: true
+  deepspeed: false

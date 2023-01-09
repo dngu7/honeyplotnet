@@ -1,0 +1,42 @@
+---
+batch_size_per_gpu: 
+  continuous: 8
+model:
+  active: ['continuous','caption']  #'caption', chart_text
+  chart_text_data:
+    hf_model: 
+      name: google/t5-v1_1-large  
+  caption:
+    hf_model: 
+      name: google/t5-v1_1-large
+  continuous_data:
+    encoder:
+      transformer:
+        n_layer: 4
+        n_head: 4
+    decoder:
+      transformer:
+        n_layer: 4
+        n_head: 4
+        d_kv: 8
+    disc: 
+      use: False
+    mhd:
+      use: True
+    vq:
+      name: vq
+      emb_dim1: 32
+      emb_dim2: 32
+      n_emb1: 128
+      n_emb2: 128
+      emb_len1: 8
+      emb_len2: 1
+train:
+  gradient_accum_steps: 32
+  intervals:
+    snapshot: 1
+torch_dist:
+  use: true
+  deepspeed: false
+batch_size_per_gpu: 
+  seq: 4

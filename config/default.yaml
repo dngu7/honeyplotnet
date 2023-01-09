@@ -1,0 +1,290 @@
+---
+seed: 1
+debug: false
+timeout: 3600
+gpu:
+  use: true
+fp16: 
+  use: false
+  eval: false
+  loss_scale: 1.0
+  initial_scale_power: 64
+  loss_scale_window: 1000
+  hysteresis: 2
+  min_loss_scale: 1000
+  opt_level: O3
+torch_dist:
+  use: true
+  fsdp: false
+  deepspeed: false 
+  amp: false
+  gpus_per_model: 1
+  backend: nccl
+  init_method: env://
+batch_size_per_gpu: 
+  continuous: 8
+  caption: 14
+  seq: 8
+  language: 14
+  chart_text: 14
+num_workers: 8
+exp_dir: 
+  home: /media/dingdong/DATA3/exp/dvq_charts 
+data:
+  name: pmc
+  path: 
+    home: /media/dingdong/DATA3/data/dvq_charts 
+  load_processed:
+    use: True
+    name: new_splitv4
+  dataset:
+    caption:
+      tgt_token: <mask_1>
+      window_size: 16
+      widen_rate: 0.1
+      max_widen_len: 1
+      min_sent_len: 10
+    chart_data:
+      active_tasks: ['task6']
+      active_charts: []
+      norm_mode: minmax
+      scale_mode: log10
+      scale_eps: [1.100001, 1.100001]
+      scale_floor: [0.000001, 0.000001]
+      chart_text_input: ['caption']
+      chart_text_output: ['categorical','series','axis']
+      sep_token: <SEP>
+      sep_token1: <SEP1>
+      sep_token2: <SEP2>
+model:
+  active: ['caption', 'continuous']
+  caption:
+    hf_model: 
+      multihead: False
+      name: google/t5-v1_1-large
+      tgt_token: <mask_1>
+      max_source_len: 1024 
+      max_target_len: 256 
+      pad_to_max_len: True
+      ignore_pad_token_for_loss: True
+      use_fast: True
+  chart_text_data:
+    name: v0
+    hf_model: 
+      tasks: ['chart_text', 'series_name', 'axis']
+      name: google/t5-v1_1-large
+      tgt_token: <mask_1>
+      model_max_length: 512
+      max_source_len: 1024 
+      max_target_len: 256 
+      pad_to_max_len: True
+      ignore_pad_token_for_loss: True
+      use_fast: True
+  continuous_data:
+    name: v2
+    active: ['scale', 'continuous'] 
+    use_pos_embs: true
+    text_model:
+      name: t5-small
+      model_max_length: 512
+      max_source_len2: 8
+      max_target_len2: 8 
+      pad_to_max_len: True
+      ignore_pad_token_for_loss: True
+      use_fast: True
+    encoder:
+      chart_type_conditional: False
+      max_blocks:
+        series: 64
+        points: 256
+      conv:
+        channels: [256, 128, 64]
+        kernels: [1,1,1,1]
+        stride: 1
+        padding: 0
+        use_bn: false
+        n_res_block: 2
+        n_res_channel: 32
+        res_kernels: [1,1]
+        res_padding: 0
+      transformer:
+        use: true
+        name: gpt
+        n_layer: 4
+        n_head: 1
+    decoder:
+      chart_type_conditional: True
+      conv:
+        channels: [32, 64, 128] #256
+        kernels: [1,1,1,1]
+        stride: 1
+        padding: 0
+        use_bn: false
+        n_res_block: 2
+        n_res_channel: 32
+        res_kernels: [1,1]
+        res_padding: 0
+        use_proj: false
+      transformer:
+        use: true
+        name: t5_decoder #gpt
+        n_layer: 4
+        n_head: 1
+        d_kv: 4
+        num_buckets: 8
+        max_distance: 32
+      scale:
+        n_head: 1 #5 #1
+    disc:
+      use: False
+      disc_start: 100
+      disc_loss: hinge
+      disc_factor: 1.0
+      disc_weight: 1.0
+      disc_conditional: True
+      use_pos_embs: True
+      conv:
+        channels: [256, 128, 64]
+        kernels: [1,1,1,1]
+        stride: 1
+        padding: 0
+        use_bn: false
+        n_res_block: 2
+        n_res_channel: 32
+        res_kernels: [1,1]
+        res_padding: 0
+      transformer:
+        use: true
+        name: gpt
+        n_layer: 4
+        n_head: 1
+    vq:
+      name: vq
+      emb_dim1: 16
+      emb_dim2: 16
+      n_emb1: 64
+      n_emb2: 64
+      emb_len1: 4
+      emb_len2: 1
+      beta: 0.25
+    mhd:
+      use: False
+      name: mhd1d
+      bottleneck: False
+      bottleneck_dim: 16
+      hypothese_count: 1024 
+      hypothese_bsz: 1024
+      residual: True
+      loss_reduce: mean
+      dist_reduce: mean
+      loss_reduce_dims: [-2, -1]
+      norm: True
+      act: relu
+      decoder_loss: winner 
+      dist_loss: mse 
+      gamma: 0.25
+      dropout_rate: 0.5
+      decoder:
+        act: leakyrelu
+        n_res_block: 2
+        res_kernels: [3,1]
+        n_res_channel: 8
+    loss_fn:
+      scale: l1
+      continuous: mse
+  seq:
+    name: gpt 
+    gpt:
+      n_layer: 4
+      n_head: 16
+    hf_model: #for embeddings
+      name: google/pegasus-pubmed
+      tgt_token: <mask_1>
+      max_source_len: 1024 
+      max_target_len: 256 
+      pad_to_max_len: True
+      ignore_pad_token_for_loss: True
+      use_fast: True
+train:
+  save_codebook_indices: True
+  epochs:
+    warmup: 0
+    caption: 51
+    continuous: 501
+    chart_text: 251
+    language: 501
+    seq: 50
+    total: 701
+  gradient_accum_steps: 1 #18 #42 #64 #64 
+  max_grad_norm: 1.0
+  loss_weights:
+    cb1: 1.0
+    cb2: 1.0
+    wta: 1.0
+    continuous: 1.0
+    scale: 1.0
+    categorical: 1.0
+    series_name: 1.0
+    ct: 1.0
+    row: 1.0
+    col: 1.0
+    gan: 1.0
+    disc: 1.0
+  optim:
+    type: Adam
+    learning_rate: 0.0005
+    betas: [0.9, 0.999]
+    eps: 1e-8
+    weight_decay: 3e-7
+  label_smoothing_factor: 0.1
+  scheduler:
+    type: WarmupLR #linear
+    warmup_type: linear
+    warmup_min_lr: 0
+    warmup_max_lr: 0.001
+    warmup_num_steps: 1000
+    warmup_ratio: 0.0
+  intervals:
+    snapshot: 20
+    display: 500000 #Only for debugging
+    eval: 1
+    gen: 50000
+    val: 20000
+  resume:
+    is_resume: False
+    exp_name: /
+    snapshot_file: /
+eval:
+  gen_steps: 2
+  max_steps: 256
+  sample_interval: 50
+  sample_epoch: 50
+  include_inputs_for_metrics: False
+  eval_accumulation_steps: 10
+  batch_size: 8
+  num_beams: 1
+  max_length: 256
+  repetition_penalty: 1.0
+  gen_temperature: 1.0
+  hypo_count: 1
+  hypo_bsz: 1
+  ksm:
+    active: true
+    name: google/pegasus-pubmed
+    use_fast: true
+zero_opt: #For deepseed
+  stage: 3 #0.  Stage 0, 1, 2, and 3 refer to disabled, optimizer state partitioning, and optimizer+gradient state partitioning, and optimizer+gradient+parameter partitioning,
+  allgather_partitions: true
+  allgather_bucket_size: 500000000
+  overlap_comm: false
+  reduce_scatter: true
+  reduce_bucket_size: 500000000
+  contiguous_gradients: true
+  grad_hooks: true
+  round_robin_gradients: false
+  offload_param:
+    device: cpu
+  offload_optimizer:
+    device: cpu
+  autotuning:
+    enabled: false
