@@ -136,11 +136,6 @@ def select_dataset(mode, stage, root, dataset_cfg, tokenizers, dataset_name='pmc
 
   else:
 
-    if post_processed_dataset is not None:
-      processed_dir = os.path.join(processed_dir, post_processed_dataset)
-      print(f"Processed Data Directory: {processed_dir}")
-
-
     data_name  = '{}_{}'.format(dataset_name, 'data')
     train_path = os.path.join(processed_dir, "{}_{}.pkl".format(data_name, 'train'))
     val_path   = os.path.join(processed_dir, "{}_{}.pkl".format(data_name, 'test'))

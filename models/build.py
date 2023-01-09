@@ -6,7 +6,6 @@
 # ---------------------------------------------------------------
 
 
-import deepspeed
 
 import torch
 import torch.nn as nn
@@ -38,6 +37,10 @@ def init_model(cfg, mode, stage, device_id):
   use_distributed = cfg.torch_dist.use
   use_deepspeed   = cfg.torch_dist.deepspeed
   active_models   = cfg.model.active
+
+  if use_deepspeed:
+    import deepspeed
+
 
   if cfg.rank == 0:
     print("Active models         : {}".format(active_models))

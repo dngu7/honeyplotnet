@@ -13,8 +13,6 @@ import torch
 from torch.nn import functional as F
 from utils.recon_plots import create_boxplot, create_scatter
 
-from vega import get_vega_template
-
 from transformers.trainer_pt_utils import (
   find_batch_size, 
   nested_concat, 

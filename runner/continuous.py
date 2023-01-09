@@ -6,13 +6,11 @@
 # ---------------------------------------------------------------
 
 import os
-import numpy as np
-import json
 import torch
 import torch.distributed as dist
 
 from utils import (
-  pickle_save, load_statistics, calculate_frechet_distance, create_recon_plots
+  pickle_save, create_recon_plots
 )
 
 from .base import BaseRunner

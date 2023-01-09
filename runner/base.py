@@ -26,8 +26,6 @@ from transformers.trainer_pt_utils import (
    distributed_concat
 )
 
-from vega import get_vega_template
-
 if version.parse(torch.__version__) >= version.parse("1.6"):
     _is_torch_generator_available = True
     _is_native_amp_available = True
