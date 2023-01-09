@@ -266,7 +266,6 @@ class GenRunner(CaptionRunner):
         m.eval()
 
     iterator = loader.__iter__()
-    #container = {'cb1': [], 'cb2': [], 'ct_idx': []}
     container = {}
     ct_idxs = []
     for _, inputs in enumerate(iterator):
@@ -364,15 +363,14 @@ class GenRunner(CaptionRunner):
     contexts = caption_tokens['context']
     captions = caption_text['caption']
 
-    caption_loader = self.create_loader(captions, 
-      models['chart_text'], tokenizers['chart_text']
-      )
-    
     chart_text_tokens = self.generate_chart_text(captions, models, tokenizers)
     chart_text_dict = self.detokenize(chart_text_tokens, tokenizers['chart_text'])
 
     chart_data = self.generate_codebook(caption_loader, models)
 
+    caption_loader = self.create_loader(captions, 
+      models['chart_text'], tokenizers['seq']
+      )
     self.logger.info("Completed generation. Starting save process.")
 
     chart_text_dict['caption'] = [c[0] for c in captions]
@@ -409,89 +407,10 @@ class GenRunner(CaptionRunner):
       else:
         raise ValueError(f"Invalid chart type given: {x_data['head_type']}")
         
-
   def save_raw_json(self, data, text, save_dir, idx):    
     output_fn = os.path.join(save_dir,  f"{idx}.json")
     with open(output_fn, 'w') as f:
       json.dump(data, f)
-
-  def create_vega_json(self, chart_data, save_dir, idx):
-    ''' chart_data: ['chart_type','row','col','continuous' '''
-    chart_type = chart_data['chart_type']
-
-    assert chart_type in ['point', 'categorical','boxplot']
-    if chart_type == 'categorical':
-      json_file = self.build_categorical_json(chart_data)
-    elif chart_type == 'point':
-      json_file = self.build_point_json(chart_data)
-    else:
-      return
-    output_fn = os.path.join(save_dir,  f"{idx}_{chart_type}.json")
-    
-    with open(output_fn, 'w') as f:
-      json.dump(json_file, f)
-
-  def build_point_json(self,  chart_data):
-
-    chart_type = chart_data['chart_type']
-    continuous_data = chart_data['continuous']
-    json_file = get_vega_template(chart_type)
-
-    data = []
-    values = []
-    d = {"name": "table"}
-
-    cols = min(chart_data['col'], len(continuous_data[0]))
-    rows = min(chart_data['row'], len(continuous_data))
-
-    for cidx, row_idx in enumerate(range(rows)): #By series name
-      for col_idx in range(cols): #Right to left
-        v = {}
-        v['x'] = continuous_data[row_idx][col_idx][0]
-        v['y'] = continuous_data[row_idx][col_idx][1]
-        v['c'] = cidx
-        values.append(v)    
-    d['values'] = values #Add a list of dicts
-
-    data.append(d)
-    json_file['data'] = data
-    return json_file
-
-  def build_categorical_json(self,  chart_data):
-
-    chart_type = chart_data['chart_type']
-    continuous_data = chart_data['continuous']
-    chart_text = chart_data['categorical']
-
-    json_file = get_vega_template(chart_type)
-
-    data = []
-    values = []
-    d = {"name": "table"}
-
-    cols = min(chart_data['col'], len(chart_text), len(continuous_data[0]))
-    rows = min(chart_data['row'], len(continuous_data))
-    
-    text_idx = 0
-    for cidx, row_idx in enumerate(range(rows)): #By series name
-      for col_idx in range(cols): #Right to left
-        v = {}
-        v['x'] = chart_text[col_idx]
-        v['y'] = continuous_data[row_idx][col_idx][0]
-        v['c'] = cidx
-
-        text_idx += 1
-        #Classes
-        if rows > 1:
-          v['c'] = cidx
-
-        values.append(v)
-
-    d['values'] = values #Add a list of dicts
-
-    data.append(d)
-    json_file['data'] = data
-    return json_file
 
   def sample_indices(self, logits, temp=1.0):
     bsz = logits.size(0)

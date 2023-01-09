@@ -45,7 +45,7 @@ def init_dataloader(cfg, mode, stage, models, tokenizers, return_dataset=False):
     dataset_cfg = data_cfg.dataset.caption
     model_cfg   = cfg.model.caption.hf_model
 
-  elif stage in ['chart_text', 'language', 'generate']:
+  elif stage in ['chart_text', 'generate']:
     dataset_cfg = data_cfg.dataset.chart_data
     model_cfg   = cfg.model.chart_text_data.hf_model
   
@@ -61,19 +61,14 @@ def init_dataloader(cfg, mode, stage, models, tokenizers, return_dataset=False):
     dataset_name=data_cfg.name,
     post_processed_dataset=post_processed_dataset)
 
-  if stage in ['caption', 'chart_text', 'language']:
-    
-    if stage == 'language' and mode == 'generate':
-      data_collator = train_dataset.collate_fn
-      
-    else:
-      module = models[stage].module if hasattr(models[stage], 'module') else models[stage]
-      label_pad_token_id = -100 if dataset_cfg.get('ignore_pad_token_for_loss') else tokenizers[stage].pad_token_id
-      data_collator = DataCollatorForSeq2Seq(
-          tokenizers[stage],
-          model=module,
-          label_pad_token_id=label_pad_token_id,
-          pad_to_multiple_of=8 if use_fp16 else None,
+  if stage in ['caption', 'chart_text']:
+    module = models[stage].module if hasattr(models[stage], 'module') else models[stage]
+    label_pad_token_id = -100 if dataset_cfg.get('ignore_pad_token_for_loss') else tokenizers[stage].pad_token_id
+    data_collator = DataCollatorForSeq2Seq(
+        tokenizers[stage],
+        model=module,
+        label_pad_token_id=label_pad_token_id,
+        pad_to_multiple_of=8 if use_fp16 else None,
       )
   else:
     data_collator = train_dataset.collate_fn
@@ -150,8 +145,8 @@ def select_dataset(mode, stage, root, dataset_cfg, tokenizers, dataset_name='pmc
       train_ds = PmcContinuousDataset(data=train_data, **dataset_cfg)
       val_ds   = PmcContinuousDataset(data=val_data, **val_cfg)
     elif stage == 'seq':
-      train_ds = PmcSeqDataset(data=train_data, tokenizer=tokenizers['caption'], **dataset_cfg)
-      val_ds   = PmcSeqDataset(data=val_data, tokenizer=tokenizers['caption'], **val_cfg)
+      train_ds = PmcSeqDataset(data=train_data, tokenizer=tokenizers['seq'], **dataset_cfg)
+      val_ds   = PmcSeqDataset(data=val_data, tokenizer=tokenizers['seq'], **val_cfg)
     elif mode == 'generate':
       train_ds = PmcGenerateDataset(data=train_data, tokenizer1=tokenizers['caption'], tokenizer2=tokenizers['chart_text'],**dataset_cfg)
       val_ds   = PmcGenerateDataset(data=val_data, tokenizer1=tokenizers['caption'], tokenizer2=tokenizers['chart_text'], **val_cfg)   

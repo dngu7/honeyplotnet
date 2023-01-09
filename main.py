@@ -32,8 +32,7 @@ STAGES = ['caption', 'chart_text', 'continuous',  'seq', 'generate']
 @click.option('--dist', '-di', default=None)
 @click.option('--seed', '-se', default=0)
 @click.option('--local_rank', '-lr', default=None)
-def main(config_file, mode, stage, work, batch_size,
-  debug, dist, seed, local_rank):
+def main(config_file, mode, stage, work, debug, dist, seed, local_rank):
 
   assert stage in STAGES
   assert mode in ['train', 'eval','save']
@@ -85,16 +84,12 @@ def main(config_file, mode, stage, work, batch_size,
   if seed is not None:
     cfg.seed = int(seed)
 
-  if batch_size is not None:
-    cfg.batch_size = int(batch_size)
-
   set_seeds(cfg.seed)
   if debug or cfg.debug:
     cfg = start_debug_mode(cfg)
 
   if cfg.gpu.use:
     launch_dist_backend(cfg.torch_dist, debug=cfg.debug, timeout=cfg.timeout)
-    print("Launched backend")
 
   if not cfg.train.resume.is_resume:
     cfg.exp_name = '_'.join([cfg.data.name, config_file.replace('.yaml',''), str(cfg.seed)])

@@ -29,11 +29,11 @@ batch_size_per_gpu:
   chart_text: 14
 num_workers: 8
 exp_dir: 
-  home: /media/dingdong/DATA3/exp/dvq_charts 
+  home: /media/dingdong/DATA2/Work/exp/dcg
 data:
   name: pmc
   path: 
-    home: /media/dingdong/DATA3/data/dvq_charts 
+    home: /media/dingdong/DATA2/Work/data/dcg
   load_processed:
     use: True
     name: new_splitv4

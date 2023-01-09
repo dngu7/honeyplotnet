@@ -13,7 +13,7 @@ from torch.autograd import Variable
 from torch.nn import functional as F
 
 from utils import (
-  load_statistics, calculate_frechet_distance, create_recon_plots, create_single_plot
+  create_single_plot
 )
 
 from models.constant import CHART_TO_HEAD_IDX
