@@ -41,7 +41,6 @@ def init_model(cfg, mode, stage, device_id):
   if use_deepspeed:
     import deepspeed
 
-
   if cfg.rank == 0:
     print("Active models         : {}".format(active_models))
 
@@ -72,7 +71,7 @@ def init_model(cfg, mode, stage, device_id):
   
   if 'seq' in active_models or stage == 'seq':
     ### init embeddings 
-    seq_llm = init_seq_llm_model(cfg)
+    seq_llm, toks['seq'] = init_seq_llm_model(cfg)
 
     if hasattr(seq_llm, 'model'):
       shared = seq_llm.model.shared
@@ -102,7 +101,7 @@ def init_model(cfg, mode, stage, device_id):
           )
   elif device_id is not None:
     for _stage in models.keys():
-      if models[_stage] is not None:
+      if models[_stage] is not None and device_id != 'cpu':
         models[_stage].to('cuda:{}'.format(device_id))
 
   ### Make loader for validation set
@@ -283,7 +282,7 @@ def init_continuous_model(cfg):
     'device': 'cuda:{}'.format(cfg.device_id),
   }
 
-  model = ContinuousModel(cd_cfg.name)(**data_model_kwargs)
+  model = ContinuousModel(**data_model_kwargs)
 
   opt = None
   params = list(filter(lambda p: p.requires_grad, model.parameters()))
@@ -385,7 +384,8 @@ def init_chart_text_model(cfg, device_id, sep_token='<SEP>'):
   if model.config.decoder_start_token_id is None:
       raise ValueError("Make sure that `config.decoder_start_token_id` is correctly defined")
 
-  model.cuda(device_id)
+  if device_id is not 'cpu':
+    model.cuda(device_id)
 
   params = list(filter(lambda p: p.requires_grad, model.parameters()))
   lr = cfg.train.optim.learning_rate
@@ -419,7 +419,7 @@ def init_seq_llm_model(cfg):
       )
   model.resize_token_embeddings(len(tokenizer))
 
-  return model
+  return model, tokenizer
 
 def init_caption_model(cfg, device_id, load_model=True, load_opt=True):
   sep_token       = cfg.data.dataset.chart_data.sep_token
@@ -556,8 +556,9 @@ def init_seq_model(cfg, shared, device_id, mode, stage):
 
   #############################################
 
-  model.cuda(device_id)
-
+  if device_id is not 'cpu':
+    model.cuda(device_id)
+    
   #if mode == 'train' and stage == 'seq':
   params = list(filter(lambda p: p.requires_grad, model.parameters()))
 

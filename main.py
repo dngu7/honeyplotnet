@@ -92,7 +92,7 @@ def main(config_file, mode, stage, work, debug, dist, seed, local_rank):
     launch_dist_backend(cfg.torch_dist, debug=cfg.debug, timeout=cfg.timeout)
 
   if not cfg.train.resume.is_resume:
-    cfg.exp_name = '_'.join([cfg.data.name, config_file.replace('.yaml',''), str(cfg.seed)])
+    cfg.exp_name = '_'.join([config_file.replace('.yaml',''), str(cfg.seed)])
   else:
     cfg.exp_name = cfg.train.resume.exp_name
   
@@ -196,34 +196,32 @@ def main(config_file, mode, stage, work, debug, dist, seed, local_rank):
     if cfg.torch_dist.use and not cfg.torch_dist.deepspeed:
       train_loader.batch_sampler.sampler.set_epoch(epoch)
 
-    if mode == 'train':
-      runner.train(train_loader, models, tokenizers, opts, schs)
-      
-    if mode == 'save':
-      runner.save(train_loader, models, prefix='pmc_data_train')
-      runner.save(val_loader, models, prefix='pmc_data_test')
-      
-    if mode == 'eval' or (epoch % eval_freq == 0 and epoch > cfg.train.epochs.warmup):
-      results = runner.eval(
-        val_loader, models, tokenizers, metric_key_prefix='eval', epoch=epoch, create_sample=(mode == 'eval'))
-
-      if stage in ['caption', 'chart_text']:
-        best_score = sum([results.metrics[m] for m in ["rouge1", "rouge2", "rougeL"]])
-        is_best = best_score > state.best_score[stage]
-        state.best_score[stage] = max(best_score, state.best_score[stage])
-      elif stage in ['continuous','seq']:
-        best_score = results['score']
-        is_best = best_score < state.best_score[stage]
-        state.best_score[stage] = min(best_score, state.best_score[stage])
-
-      if best_score is not None:
-        runner.logger.info("Score update | Best Score: {:.4f} Current: {:.4f}  | is_best: {}".format(state.best_score[stage], best_score, is_best))
-
-    state.scaler[stage] = runner.scaler
-    state.schs[stage]   = runner.lr_scheduler
-
-    if stage == 'generate' or (epoch % gen_freq == 0 and epoch > cfg.train.epochs.warmup):
+    if stage == 'generate':
       runner.eval(val_loader, models, tokenizers)
+
+    else:
+      if mode == 'train':
+        runner.train(train_loader, models, tokenizers, opts, schs)
+        
+      if mode == 'eval' or (epoch % eval_freq == 0 and epoch > cfg.train.epochs.warmup):
+        results = runner.eval(
+          val_loader, models, tokenizers, metric_key_prefix='eval', epoch=epoch, create_sample=(mode == 'eval'))
+
+        if stage in ['caption', 'chart_text']:
+          best_score = sum([results.metrics[m] for m in ["rouge1", "rouge2", "rougeL"]])
+          is_best = best_score > state.best_score[stage]
+          state.best_score[stage] = max(best_score, state.best_score[stage])
+        elif stage in ['continuous','seq']:
+          best_score = results['score']
+          is_best = best_score < state.best_score[stage]
+          state.best_score[stage] = min(best_score, state.best_score[stage])
+
+        if best_score is not None:
+          runner.logger.info("Score update | Best Score: {:.4f} Current: {:.4f}  | is_best: {}".format(state.best_score[stage], best_score, is_best))
+
+      state.scaler[stage] = runner.scaler
+      state.schs[stage]   = runner.lr_scheduler
+
 
     if mode == 'train' and (cfg.rank == 0 or cfg.torch_dist.deepspeed):
       if is_best:

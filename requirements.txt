@@ -31,3 +31,4 @@ cpufeature
 gensim
 nltk
 yake
+deepspeed

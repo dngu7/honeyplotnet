@@ -8,7 +8,6 @@
 import os
 import glob
 import json
-from tqdm.contrib.concurrent import process_map
 
 from .gen_helper import download_file, unzip_file
 

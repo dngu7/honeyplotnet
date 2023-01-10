@@ -4,15 +4,6 @@ debug: false
 timeout: 3600
 gpu:
   use: true
-fp16: 
-  use: false
-  eval: false
-  loss_scale: 1.0
-  initial_scale_power: 64
-  loss_scale_window: 1000
-  hysteresis: 2
-  min_loss_scale: 1000
-  opt_level: O3
 torch_dist:
   use: true
   fsdp: false
@@ -23,20 +14,18 @@ torch_dist:
   init_method: env://
 batch_size_per_gpu: 
   continuous: 8
-  caption: 14
+  caption: 2 #14
   seq: 8
   language: 14
   chart_text: 14
+  generate: 8
 num_workers: 8
 exp_dir: 
-  home: /media/dingdong/DATA2/Work/exp/dcg
+  home: 
 data:
   name: pmc
   path: 
-    home: /media/dingdong/DATA2/Work/data/dcg
-  load_processed:
-    use: True
-    name: new_splitv4
+    home: 
   dataset:
     caption:
       tgt_token: <mask_1>
@@ -57,7 +46,7 @@ data:
       sep_token1: <SEP1>
       sep_token2: <SEP2>
 model:
-  active: ['caption', 'continuous']
+  active: ['continuous']
   caption:
     hf_model: 
       multihead: False
@@ -210,10 +199,9 @@ train:
   epochs:
     warmup: 0
     caption: 51
-    continuous: 501
+    continuous: 1001
     chart_text: 251
-    language: 501
-    seq: 50
+    seq: 1001
     total: 701
   gradient_accum_steps: 1 #18 #42 #64 #64 
   max_grad_norm: 1.0
@@ -246,7 +234,7 @@ train:
     warmup_ratio: 0.0
   intervals:
     snapshot: 20
-    display: 500000 #Only for debugging
+    display: 500000
     eval: 1
     gen: 50000
     val: 20000
@@ -273,7 +261,7 @@ eval:
     name: google/pegasus-pubmed
     use_fast: true
 zero_opt: #For deepseed
-  stage: 3 #0.  Stage 0, 1, 2, and 3 refer to disabled, optimizer state partitioning, and optimizer+gradient state partitioning, and optimizer+gradient+parameter partitioning,
+  stage: 3 
   allgather_partitions: true
   allgather_bucket_size: 500000000
   overlap_comm: false
@@ -288,3 +276,12 @@ zero_opt: #For deepseed
     device: cpu
   autotuning:
     enabled: false
+fp16: 
+  use: false
+  eval: false
+  loss_scale: 1.0
+  initial_scale_power: 64
+  loss_scale_window: 1000
+  hysteresis: 2
+  min_loss_scale: 1000
+  opt_level: O3

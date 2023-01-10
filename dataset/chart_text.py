@@ -61,7 +61,7 @@ class PmcChartTextDataset(PmcDataDataset):
 
       if len(categorical_data) > 0 and 'categorical' in self.chart_text_output:
         categorical_data = self.sep_token.join(categorical_data)
-        outputs['chart_text'] = self.tokenize_tgt_flatten(categorical_data)
+        outputs['categorical'] = self.tokenize_tgt_flatten(categorical_data)
 
       axis_data = self.get_axis_names(d)
 

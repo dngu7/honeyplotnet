@@ -16,7 +16,6 @@ from utils import pickle_open
 
 from .seq import PmcSeqDataset
 from .caption_train import PmcCaptionDataset
-from .caption_pre import PmcCaptionPreDataset
 from .generate import PmcGenerateDataset
 from .continuous import PmcContinuousDataset
 from .chart_text import PmcChartTextDataset
@@ -32,9 +31,6 @@ def init_dataloader(cfg, mode, stage, models, tokenizers, return_dataset=False):
   use_distributed = cfg.torch_dist.use
   use_fp16        = cfg.fp16.use
 
-  post_processed_dataset = None
-  if data_cfg.load_processed.use:
-    post_processed_dataset = data_cfg.load_processed.name
 
   #Obtain dataset and model configurations here
   if stage in ['continuous','seq']:
@@ -52,14 +48,12 @@ def init_dataloader(cfg, mode, stage, models, tokenizers, return_dataset=False):
   #Combine into the same
   dataset_cfg = {**dataset_cfg, **model_cfg, 'debug': cfg.debug}
   
-  #select_dataset(mode, stage, root, data_cfg, tokenizers, use_fp16, dataset_name='pmc', post_processed_dataset=None)
   train_dataset, val_dataset = select_dataset(
     mode=mode, stage=stage, 
     root=data_path, 
     dataset_cfg=dataset_cfg, 
     tokenizers=tokenizers, 
-    dataset_name=data_cfg.name,
-    post_processed_dataset=post_processed_dataset)
+    dataset_name=data_cfg.name)
 
   if stage in ['caption', 'chart_text']:
     module = models[stage].module if hasattr(models[stage], 'module') else models[stage]
@@ -102,62 +96,42 @@ def init_dataloader(cfg, mode, stage, models, tokenizers, return_dataset=False):
 
     return train_loader, val_loader
 
-def select_dataset(mode, stage, root, dataset_cfg, tokenizers, dataset_name='pmc', post_processed_dataset=None):
+def select_dataset(mode, stage, root, dataset_cfg, tokenizers, dataset_name='pmc', **kwargs):
 
   #Setup path to the data directory
   root = os.path.expanduser(root)
-  processed_dir = os.path.join(root,'processed')
 
   #Remove randomness from validation set
   val_cfg  = copy.deepcopy(dataset_cfg)
   val_cfg['widen_rate'] = 0.0
-  
-  if stage in ['caption'] and dataset_name == 'pmc_caption':
 
-    train_lmdb = os.path.join(processed_dir, "{}_{}.lmdb".format(dataset_name, 'train'))
-    val_lmdb   = os.path.join(processed_dir, "{}_{}.lmdb".format(dataset_name, 'test'))
+  data_name  = '{}_{}'.format(dataset_name, 'data')
+  train_path = os.path.join(root, "{}_{}.pkl".format(data_name, 'train'))
+  val_path   = os.path.join(root, "{}_{}.pkl".format(data_name, 'test'))
 
-    assert os.path.exists(train_lmdb), train_lmdb
-    assert os.path.exists(val_lmdb), val_lmdb
+  assert os.path.exists(train_path), train_path
+  assert os.path.exists(val_path), val_path
 
-    print("Initialised PmcCaptionPreDataset")
-    train_ds = PmcCaptionPreDataset(
-              db_path=train_lmdb, 
-              tokenizer=tokenizers.get('caption'), **dataset_cfg)
+  train_data = pickle_open(train_path)
+  val_data = pickle_open(val_path)
 
-    val_ds   = PmcCaptionPreDataset(
-              db_path=val_lmdb, 
-              tokenizer=tokenizers.get('caption'), **val_cfg)
-
+  if stage == 'continuous':
+    train_ds = PmcContinuousDataset(data=train_data, **dataset_cfg)
+    val_ds   = PmcContinuousDataset(data=val_data, **val_cfg)
+  elif stage == 'seq':
+    train_ds = PmcSeqDataset(data=train_data, tokenizer=tokenizers['seq'], **dataset_cfg)
+    val_ds   = PmcSeqDataset(data=val_data, tokenizer=tokenizers['seq'], **val_cfg)
+  elif stage == 'generate':
+    train_ds = PmcGenerateDataset(data=train_data, tokenizer1=tokenizers['caption'], tokenizer2=tokenizers['chart_text'],**dataset_cfg)
+    val_ds   = PmcGenerateDataset(data=val_data, tokenizer1=tokenizers['caption'], tokenizer2=tokenizers['chart_text'], **val_cfg)   
+  elif stage == 'caption':
+    train_ds = PmcCaptionDataset(data=train_data, tokenizer1=tokenizers['caption'], **dataset_cfg)
+    val_ds   = PmcCaptionDataset(data=val_data, tokenizer1=tokenizers['caption'], **val_cfg)
+  elif stage == 'chart_text':
+    train_ds = PmcChartTextDataset(data=train_data, tokenizer1=tokenizers['caption'], tokenizer2=tokenizers['chart_text'],**dataset_cfg)
+    val_ds   = PmcChartTextDataset(data=val_data, tokenizer1=tokenizers['caption'], tokenizer2=tokenizers['chart_text'], **val_cfg)
   else:
-
-    data_name  = '{}_{}'.format(dataset_name, 'data')
-    train_path = os.path.join(processed_dir, "{}_{}.pkl".format(data_name, 'train'))
-    val_path   = os.path.join(processed_dir, "{}_{}.pkl".format(data_name, 'test'))
-
-    assert os.path.exists(train_path), train_path
-    assert os.path.exists(val_path), val_path
-
-    train_data = pickle_open(train_path)
-    val_data = pickle_open(val_path)
-
-    if stage == 'continuous':
-      train_ds = PmcContinuousDataset(data=train_data, **dataset_cfg)
-      val_ds   = PmcContinuousDataset(data=val_data, **val_cfg)
-    elif stage == 'seq':
-      train_ds = PmcSeqDataset(data=train_data, tokenizer=tokenizers['seq'], **dataset_cfg)
-      val_ds   = PmcSeqDataset(data=val_data, tokenizer=tokenizers['seq'], **val_cfg)
-    elif mode == 'generate':
-      train_ds = PmcGenerateDataset(data=train_data, tokenizer1=tokenizers['caption'], tokenizer2=tokenizers['chart_text'],**dataset_cfg)
-      val_ds   = PmcGenerateDataset(data=val_data, tokenizer1=tokenizers['caption'], tokenizer2=tokenizers['chart_text'], **val_cfg)   
-    elif stage == 'caption':
-      train_ds = PmcCaptionDataset(data=train_data, tokenizer1=tokenizers['caption'], **dataset_cfg)
-      val_ds   = PmcCaptionDataset(data=val_data, tokenizer1=tokenizers['caption'], **val_cfg)
-    elif stage == 'chart_text':
-      train_ds = PmcChartTextDataset(data=train_data, tokenizer1=tokenizers['caption'], tokenizer2=tokenizers['chart_text'],**dataset_cfg)
-      val_ds   = PmcChartTextDataset(data=val_data, tokenizer1=tokenizers['caption'], tokenizer2=tokenizers['chart_text'], **val_cfg)
-    else:
-      raise NotImplementedError()
+    raise NotImplementedError()
 
 
   return train_ds, val_ds
