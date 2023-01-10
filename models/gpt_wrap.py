@@ -135,7 +135,6 @@ class CondGPT(nn.Module):
                 embd_pdrop=pkeeps[1],
                 )
 
-
         self.ct_model=GPTLight(
             n_class=3,
             use_fp16=use_fp16,
@@ -159,11 +158,8 @@ class CondGPT(nn.Module):
         x = self.shared(context_idx) # each index maps to a (learnable) vector
 
         logits1 = self.model(x, attn_mask=attn_mask1)
-        
         logits1 = logits1[:,:self.emb_len1,:]
         
-        #probs1 = F.softmax(logits1 / temp, dim=-1).data
-        #probs1 = torch.flatten(probs1, start_dim=0, end_dim=1)
         cb1_idx =  self.get_prediction(logits1, temp)
         cb1_idx = cb1_idx.reshape([bsz, self.emb_len1])
         cb1_embd = self.cond_embd(cb1_idx)
