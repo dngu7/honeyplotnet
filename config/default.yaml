@@ -14,18 +14,18 @@ torch_dist:
   init_method: env://
 batch_size_per_gpu: 
   continuous: 8
-  caption: 2 #14
+  caption: 14
   seq: 8
   language: 14
   chart_text: 14
   generate: 8
 num_workers: 8
 exp_dir: 
-  home: 
+  home: /media/dingdong/DATA2/Work/exp/dcg
 data:
   name: pmc
   path: 
-    home: 
+    home: /media/dingdong/DATA2/Work/data/dcg
   dataset:
     caption:
       tgt_token: <mask_1>
@@ -43,8 +43,6 @@ data:
       chart_text_input: ['caption']
       chart_text_output: ['categorical','series','axis']
       sep_token: <SEP>
-      sep_token1: <SEP1>
-      sep_token2: <SEP2>
 model:
   active: ['continuous']
   caption:

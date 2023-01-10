@@ -26,8 +26,7 @@ class PmcDataDataset(BaseDataset):
                 scale_eps=1.00001, scale_floor=-1.0, window_size=16, widen_rate=0.0, max_widen_len=1, 
                 min_sent_len=10, max_source_len=1024, max_target_len=256, max_source_len2=8, max_target_len2=8, 
                 pad_to_max_len=True, ignore_pad_token_for_loss=True, norm_mode='minmax', chart_text_input=None, 
-                chart_text_output=['categorical'], sep_token='<SEP>', sep_token1='<SEP1>', sep_token2='<SEP2>',
-               **kwargs):
+                chart_text_output=['categorical'], sep_token='<SEP>', **kwargs):
     super().__init__(tokenizer1, window_size, widen_rate, max_widen_len, 
                min_sent_len, max_source_len, max_target_len, pad_to_max_len, 
                ignore_pad_token_for_loss)
@@ -42,8 +41,6 @@ class PmcDataDataset(BaseDataset):
 
     self.chart_text_input = chart_text_input
     self.sep_token = sep_token
-    self.sep_token1 = sep_token1
-    self.sep_token2 = sep_token2
     self.chart_text_output = chart_text_output
 
     self.data = self.filter_data(data)

@@ -1,10 +1,9 @@
 ---
-seed: 100
 model:
   active: ['caption']
   caption:
     hf_model: 
-      name: google/bigbird-pegasus-large-pubmed #770 m parameters
+      name: google/bigbird-pegasus-large-pubmed 
 torch_dist:
   use: true
   deepspeed: true  

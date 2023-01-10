@@ -41,9 +41,9 @@ def load_checkpoint(state, ckpt_dirs, device_id, rank, distributed, use_deepspee
 
     if any(os.path.exists(c) for c in ckpt_dirs.values()):
         state.load(ckpt_dirs, device_id)
-        print("N[{}/{}] Ckpt Loaded:".format(device_id, rank))
+        print("N[{}/{}] Checkpoint loaded.".format(device_id, rank))
     else:
-        print("N[{}/{}] Checkpoint does not exist:".format(device_id, rank))
+        print("N[{}/{}] Checkpoint does not exist.".format(device_id, rank))
 
     if not distributed or use_deepspeed:
         return state

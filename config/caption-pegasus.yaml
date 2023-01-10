@@ -1,13 +1,12 @@
 ---
-seed: 100
 model:
   active: ['caption']
   caption:
     hf_model: 
-      name: google/pegasus-pubmed #770 m parameters
+      name: google/pegasus-pubmed 
 torch_dist:
   use: true
-  deepspeed: false  
+  deepspeed: true  
 train:
   intervals:
     eval: 100000
