@@ -22,27 +22,8 @@ from .dist_helpers import (
   Logger, Writer
 )
 
-from .icpr_helpers import (
-  download_icpr_dataset,
-  process_icpr_records,
-  process_icpr_train,
-  process_icpr_eval
-)
-
-
 from .constant import (
   REF_REG, CHART_TYPE_MAP, PAD_IDX, CB_TOKEN_TEMP, TASK2PREPEND
-)
-
-from .text_helper import (
-  clean_text,
-  remove_doc_class,
-  unicode_perc
-)
-
-from .ksm_scores import (
-  compute_similarity_scores_for_dataset,
-  SIM_PAIRS
 )
 
 from .recon_plots import (
