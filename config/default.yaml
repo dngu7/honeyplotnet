@@ -22,10 +22,12 @@ batch_size_per_gpu:
 num_workers: 8
 exp_dir: 
   home: /media/dingdong/DATA2/Work/exp/dcg
+  dug: 
 data:
   name: pmc
   path: 
     home: /media/dingdong/DATA2/Work/data/dcg
+    dug: 
   dataset:
     caption:
       tgt_token: <mask_1>
