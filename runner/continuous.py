@@ -205,15 +205,16 @@ class ContinuousRunner(BaseRunner):
           
 
       if isinstance(self.display, int) and step % self.display == 0 and step > 0:
-        self.logger.info("E{:02d} GS: {:04d} {} {} {} ".format(
+        self.logger.info("E{:02d} GS: {:04d} {} {}".format(
           self.epoch, self.global_step, self.tracker.loss_str('iter'),
           self.tracker.metric_str('iter')))
         
         self.tracker.reset_interval('iter')
 
-    self.logger.info("E{:02d} (eval)  {} {} {}".format(
+    self.logger.info("E{:02d} (eval)  {} {}".format(
       self.epoch, self.tracker.loss_str('epoch'),
       self.tracker.metric_str('epoch')))
+
     self.update_writer('eval')
 
     if self.use_torch_dist:
