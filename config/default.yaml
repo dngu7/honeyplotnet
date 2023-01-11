@@ -20,13 +20,11 @@ batch_size_per_gpu:
   generate: 8
 num_workers: 8
 exp_dir: 
-  home: /media/dingdong/DATA2/Work/exp/dcg
-  dug: /data/csiro_od210966/exp/dcg
+  home: 
 data:
   name: pmc
   path: 
-    home: /media/dingdong/DATA2/Work/data/dcg
-    dug: /data/csiro_od210966/data/dvq_charts
+    home: 
   dataset:
     caption:
       tgt_token: <mask_1>
