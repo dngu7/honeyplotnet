@@ -20,7 +20,7 @@ export NCCL_SOCKET_IFNAME=eth0
 
 export TRANSFORMERS_CACHE=/data/csiro_od210966/data/cache
 
-CONFIG=caption-bird.yaml 
+CONFIG=caption-pegasus.yaml 
 STAGE=chart_text 
 WORK=dug
 MODE=train
