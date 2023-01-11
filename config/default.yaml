@@ -16,8 +16,7 @@ batch_size_per_gpu:
   continuous: 8
   caption: 14
   seq: 8
-  language: 14
-  chart_text: 14
+  chart_text: 8
   generate: 8
 num_workers: 8
 exp_dir: 
