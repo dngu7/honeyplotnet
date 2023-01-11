@@ -1,0 +1,14 @@
+---
+model:
+  continuous_data:
+    mhd:
+      use: True
+train:
+  gradient_accum_steps: 32
+  intervals:
+    snapshot: 1
+torch_dist:
+  use: true
+  deepspeed: false
+batch_size_per_gpu: 
+  seq: 4
