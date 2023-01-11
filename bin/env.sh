@@ -16,6 +16,7 @@ export http_proxy=http://proxy.per.dug.com:3128
 set https_proxy=http://proxy.per.dug.com:3128
 set http_proxy=http://proxy.per.dug.com:3128
 
+export CODE_DIR=/data/csiro_od210966/code/dcg
 
 source $DATA_HOME/envs/$DEFAULT_ENV/bin/activate
 
