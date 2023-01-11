@@ -77,7 +77,7 @@ def mkdir_safe(path):
 def load_cfg(cfg_name, cfg_dir, default_name='default.yaml'):
   default_path = os.path.join(cfg_dir, default_name)
   cfg_path = os.path.join(cfg_dir, cfg_name)
-  assert os.path.exists(default_path) and os.path.exists(cfg_path)
+  assert os.path.exists(default_path) and os.path.exists(cfg_path), f"{default_path}, {cfg_path}"
   return merge_a_into_b(cfg_path, default_path)
 
 def merge_a_into_b(cfg_path, default_path):
