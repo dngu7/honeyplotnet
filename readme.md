@@ -56,7 +56,7 @@ See official guide on [Pytorch Distributed](https://pytorch.org/docs/stable/dist
 
 
 ### License
-Copyright © __________________________ 2022. This work has been supported by the Cyber Security Research Centre (CSCRC) Limited whose activities are partially funded by the Australian Government’s Cooperative Research Centres Programme. We are currently tracking the impact CSCRC funded research. If you have used this code/data in your project, please contact us at contact@cybersecuritycrc.org.au to let us know.
+Copyright © __________________________. This work has been supported by __________________________. We are currently tracking the impact __________________________ funded research. If you have used this code/data in your project, please contact us at __________________________ to let us know.
 
 ### Citations
 Please cite our paper, if use this codebase. Thank you.
