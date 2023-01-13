@@ -1,6 +1,6 @@
 # PyTorch Implementation of "Automated Honey Chart Generation for Enhanced Honeyfiles"
 
-[Honey Chart Architecture] (HCA) is a collection of machine learning models that generate realistic and semantically consistent honey charts for honeyfiles.
+The Honey Chart Architecture (HCA) is a collection of machine learning models that generate realistic and semantically consistent honey charts for honeyfiles.
 DCG achieves high semantic consistency by structuring conditional prediction pathways from the surrounding document text, to the captions and then to the underlying chart data.
 DCG reduces computational requirements by utilizing multi-task learning and a novel multi-head design that learns multiple chart formats simultaneously.
 
