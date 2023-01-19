@@ -16,18 +16,15 @@ batch_size_per_gpu:
   continuous: 8
   caption: 14
   seq: 8
-  language: 14
-  chart_text: 14
+  chart_text: 8
   generate: 8
 num_workers: 8
 exp_dir: 
-  home: /media/dingdong/DATA2/Work/exp/dcg
-  dug: 
+  home: 
 data:
   name: pmc
   path: 
-    home: /media/dingdong/DATA2/Work/data/dcg
-    dug: 
+    home: 
   dataset:
     caption:
       tgt_token: <mask_1>
@@ -60,7 +57,7 @@ model:
   chart_text_data:
     name: v0
     hf_model: 
-      tasks: ['chart_text', 'series_name', 'axis']
+      tasks: ['categorical', 'series_name', 'axis']
       name: google/t5-v1_1-large
       tgt_token: <mask_1>
       model_max_length: 512
@@ -100,7 +97,7 @@ model:
         use: true
         name: gpt
         n_layer: 4
-        n_head: 1
+        n_head: 4
     decoder:
       chart_type_conditional: True
       conv:
@@ -118,8 +115,8 @@ model:
         use: true
         name: t5_decoder #gpt
         n_layer: 4
-        n_head: 1
-        d_kv: 4
+        n_head: 4
+        d_kv: 8
         num_buckets: 8
         max_distance: 32
       scale:
@@ -149,11 +146,11 @@ model:
         n_head: 1
     vq:
       name: vq
-      emb_dim1: 16
-      emb_dim2: 16
-      n_emb1: 64
-      n_emb2: 64
-      emb_len1: 4
+      emb_dim1: 32
+      emb_dim2: 32
+      n_emb1: 128
+      n_emb2: 128
+      emb_len1: 16
       emb_len2: 1
       beta: 0.25
     mhd:
@@ -184,7 +181,7 @@ model:
   seq:
     name: gpt 
     gpt:
-      n_layer: 4
+      n_layer: 16
       n_head: 16
     hf_model: #for embeddings
       name: google/pegasus-pubmed
@@ -195,7 +192,6 @@ model:
       ignore_pad_token_for_loss: True
       use_fast: True
 train:
-  save_codebook_indices: True
   epochs:
     warmup: 0
     caption: 51

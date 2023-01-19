@@ -1,8 +1,8 @@
-# PyTorch Implementation of "Decoy Chart Generator for Cyber Deception"
+# PyTorch Implementation of "Automated Honey Chart Generation for Enhanced Honeyfiles"
 
-[Decoy Chart Generator] (DCG) is a set of machine learning models that generates realistic and semantically consistency charts for honeyfiles.
-DCG achieves high semantic consistency by structuring conditional prediction pathways from the surrounding document text, to the captions and then to the underlying chart data.
-DCG reduces computational requirements by utilizing multi-task learning and a novel multi-head design that learns multiple chart types simultaneously.
+The Honey Chart Architecture (HCA) is a collection of machine learning models that generate realistic and semantically consistent honey charts for honeyfiles.
+HCA achieves high semantic consistency by structuring conditional prediction pathways from the surrounding document text, to the captions and then to the underlying chart data.
+HCA reduces computational requirements by utilizing multi-task learning and a novel multi-head design that learns multiple chart formats simultaneously.
 
 ### Requirements
 This codebase was built using Python 3.7 (CUDA 11.6), PyTorch 1.12.0, Torchvision 0.13.0. Use the following script to build a virtual env and install required packages.
@@ -56,7 +56,7 @@ See official guide on [Pytorch Distributed](https://pytorch.org/docs/stable/dist
 
 
 ### License
-Copyright © __________________________ 2022. This work has been supported by the Cyber Security Research Centre (CSCRC) Limited whose activities are partially funded by the Australian Government’s Cooperative Research Centres Programme. We are currently tracking the impact CSCRC funded research. If you have used this code/data in your project, please contact us at contact@cybersecuritycrc.org.au to let us know.
+Copyright © __________________________. This work has been supported by __________________________. We are currently tracking the impact __________________________ funded research. If you have used this code/data in your project, please contact us at __________________________ to let us know.
 
 ### Citations
 Please cite our paper, if use this codebase. Thank you.

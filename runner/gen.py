@@ -379,7 +379,7 @@ class GenRunner(CaptionRunner):
     chart_text_dict['categorical'] = chart_text_dict.pop('chart_text')
 
     chart_text_dict['categorical'] = [s for s in chart_text_dict['categorical'] if 'unnamed' not in s]
-    chart_text_dict['series_name'] = [s for s in chart_text_dict['series_name'] if 'unnamed' not in s]
+    chart_text_dict['series_name'] = sorted([s for s in chart_text_dict['series_name'] if 'unnamed' not in s])
 
     self.create_mpl_plots(x=chart_data, text_data=chart_text_dict, save_dir=self.cfg.sample_dirs['generate'])
 
