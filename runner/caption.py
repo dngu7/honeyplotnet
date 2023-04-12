@@ -315,7 +315,7 @@ class CaptionRunner(BaseRunner):
       
       sim_score = calc_similarity(reference_emb, task_emb).mean().detach().cpu().item()
       
-      if task not in sim_scores:
+      if 'ksm_' + task not in sim_scores:
         sim_scores['ksm_' + task] = []
 
       sim_scores['ksm_' + task].append(sim_score)
