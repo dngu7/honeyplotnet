@@ -92,10 +92,10 @@ def main(config_file, mode, stage, work, debug, dist, seed, local_rank):
   if cfg.gpu.use:
     launch_dist_backend(cfg.torch_dist, debug=cfg.debug, timeout=cfg.timeout)
 
-  if not cfg.train.resume.is_resume:
+  if cfg.exp_name is None:
     cfg.exp_name = '_'.join([config_file.replace('.yaml',''), str(cfg.seed)])
   else:
-    cfg.exp_name = cfg.train.resume.exp_name
+    cfg.exp_name = cfg.exp_name
   
   ###########################################
   # Setup directories
@@ -163,7 +163,7 @@ def main(config_file, mode, stage, work, debug, dist, seed, local_rank):
   #Initialize pre-trained fid model
   fid_stats = None
   if cfg.eval.fid:
-    models['fid'], fid_stats = init_fid_model(cfg, load_path=cur_dir, device_id=cfg.device_id)
+    models['fid'], fid_stats = init_fid_model(cfg, device_id=cfg.device_id)
 
   runner = get_runners(cfg, stage)
   runner.global_step = state.global_step

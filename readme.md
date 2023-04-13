@@ -1,6 +1,6 @@
-# PyTorch Implementation of "Automated Honey Chart Generation for Enhanced Honeyfiles"
+# PyTorch Implementation of "HoneyChart"
 
-The Honey Chart Architecture (HCA) is a collection of machine learning models that generate realistic and semantically consistent honey charts for honeyfiles.
+HoneyChart is a collection of machine learning models that generate realistic and semantically consistent honey charts for honeyfiles.
 HCA achieves high semantic consistency by structuring conditional prediction pathways from the surrounding document text, to the captions and then to the underlying chart data.
 HCA reduces computational requirements by utilizing multi-task learning and a novel multi-head design that learns multiple chart formats simultaneously.
 
@@ -29,10 +29,10 @@ All other configurations inherit properties from default.yaml.
 The dataset combines charts and captions from PubMedCentral. The chart data was originally from the ICPR 2020 chart detection competition.
 * Download - [link](https://decoychart.s3.ap-southeast-2.amazonaws.com/document-chart-dataset.zip)
 
-Put this into your config.data.path.home directory.
+This is automatically downloaded from a S3 bucket.
 
 ### Training and evaluation 
-The entry point is main.py which requires specification of mode=['train','eval'],  stage=['caption','chart_text','continuous','seq', 'generate']. 
+The entry point is main.py which requires specification of mode=['train','eval'],  stage=['chart_text','continuous','seq', 'generate']. 
 
 The following command works for a single GPU. 
 ```

@@ -1,4 +1,5 @@
 ---
+exp_name: default
 seed: 1
 num_workers: 8
 debug: false
