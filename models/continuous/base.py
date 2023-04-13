@@ -141,14 +141,14 @@ class BaseDataModel(nn.Module):
     loss = {}
 
     y1 = self.enc_proj1(encoder_output)
-    c_base, _, cb_loss1 = self.vq_layer1(y1)
+    c_base, _, cb_loss1, _ = self.vq_layer1(y1)
 
     loss['cb1'] = cb_loss1
 
     if self.use_mhd:
       y2 = self.enc_proj2(encoder_output)
       y2 = self.enc_proj3(y2)
-      c_i, _, cb_loss2 = self.vq_layer2(y2)
+      c_i, _, cb_loss2, _ = self.vq_layer2(y2)
        
       loss['cb2']                  = cb_loss2
       

@@ -1,7 +1,10 @@
 ---
 seed: 1
+num_workers: 8
 debug: false
 timeout: 3600
+exp_dir: 
+  home: 
 gpu:
   use: true
 torch_dist:
@@ -13,14 +16,10 @@ torch_dist:
   backend: nccl
   init_method: env://
 batch_size_per_gpu: 
-  continuous: 8
-  caption: 14
-  seq: 8
   chart_text: 8
+  continuous: 8
+  seq: 8
   generate: 8
-num_workers: 8
-exp_dir: 
-  home: 
 data:
   name: pmc
   path: 
@@ -195,9 +194,8 @@ model:
 train:
   epochs:
     warmup: 0
-    caption: 51
+    chart_text: 51
     continuous: 1001
-    chart_text: 251
     seq: 1001
     total: 701
   gradient_accum_steps: 1 #18 #42 #64 #64 

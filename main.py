@@ -185,7 +185,7 @@ def main(config_file, mode, stage, work, debug, dist, seed, local_rank):
     total_epochs = cfg.train.epochs.total
   
   if cfg.rank == 0:
-    runner.logger.info(f"=> stage: {stage}, mode: {mode}, start_epoch: {start_epoch}, total_epochs: {total_epochs}, best_score: {state.best_score.get(stage)}")
+    runner.logger.info(f"Start_epoch: {start_epoch}, total_epochs: {total_epochs}, best_score: {state.best_score.get(stage)}")
     runner.logger.info("Active components >>")
     runner.logger.info("model      : {}".format([name for name, m in models.items() if m is not None]))
     runner.logger.info("opt        : {}".format([name for name, m in opts.items() if m is not None]))

@@ -25,7 +25,7 @@ class State:
   def __init__(self, models, tokenizers, opts, schs, rank=0, use_deepspeed=False, mode='train', stage='caption'):
     self.epoch = -1
     self.global_step = 0
-    self.best_score = {'caption': 0.0, 'chart_text': 0.0, 'continuous': float('inf'), 'seq':float('inf')}
+    self.best_score = {'chart_text': 0.0, 'continuous': float('inf'), 'seq':float('inf')}
     self.use_deepspeed = use_deepspeed
     self.models = models
     self.tokenizers = tokenizers
@@ -33,7 +33,7 @@ class State:
     self.schs = schs
     self.scaler = {}
     self.metrics = []
-    self.snapshot_keys = ['caption', 'continuous', 'seq_base', 'seq_cond', 'chart_text','language']
+    self.snapshot_keys = ['chart_text', 'continuous', 'seq_base', 'seq_cond']
     self.mode = mode
     self.cur_stage = stage
     self.rank = rank
@@ -163,7 +163,7 @@ class State:
       client_sd = None
       ckpt_files = glob.glob(ckpt_dir + '/*')
       if self.rank == 0:
-        print(f"stage: {stage}  ckpt_dir [{len(ckpt_files)}] = {ckpt_dir}")
+        print(f"Checkpoint Dir: Files=[{len(ckpt_files)}] Path={ckpt_dir}")
 
       if len(ckpt_files) > 0:
         zero2f32_ckpts = [f for f in ckpt_files if f.endswith('.bin')]

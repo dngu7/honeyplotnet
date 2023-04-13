@@ -7,6 +7,7 @@
 
 import os
 import copy
+import wget
 
 from torch.distributed.elastic.utils.data import ElasticDistributedSampler
 from torch.utils.data import DataLoader, SequentialSampler, RandomSampler
@@ -103,8 +104,8 @@ def select_dataset(mode, stage, root, dataset_cfg, tokenizers, dataset_name='pmc
   train_path = os.path.join(root, "{}_{}.pkl".format(data_name, 'train'))
   val_path   = os.path.join(root, "{}_{}.pkl".format(data_name, 'test'))
 
-  assert os.path.exists(train_path), train_path
-  assert os.path.exists(val_path), val_path
+  if not os.path.exists(train_path) or os.path.exists(val_path):
+    download_dataset(root)
 
   train_data = pickle_open(train_path)
   val_data = pickle_open(val_path)
@@ -127,3 +128,11 @@ def select_dataset(mode, stage, root, dataset_cfg, tokenizers, dataset_name='pmc
 
   return train_ds, val_ds
 
+def download_dataset(path):
+  S3_BUCKET = 'https://s3.ap-southeast-2.amazonaws.com/decoychart/chartfid/'
+  assert os.path.exists(path), path
+  snapshot_names = ['pmc_data_train.pkl', 'pmc_data_test.pkl']
+  for snapshot_name in snapshot_names:
+      snapshot_local = os.path.join(path, snapshot_name)
+      if not os.path.exists(snapshot_local):
+          wget.download(os.path.join(S3_BUCKET, snapshot_name), snapshot_local)
