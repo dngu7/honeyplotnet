@@ -15,7 +15,6 @@ from transformers import DataCollatorForSeq2Seq
 from utils import pickle_open
 
 from .seq import PmcSeqDataset
-from .caption_train import PmcCaptionDataset
 from .generate import PmcGenerateDataset
 from .continuous import PmcContinuousDataset
 from .chart_text import PmcChartTextDataset
@@ -29,21 +28,16 @@ def init_dataloader(cfg, mode, stage, models, tokenizers, return_dataset=False):
   num_workers     = cfg.num_workers
   use_gpu         = cfg.gpu.use
   use_distributed = cfg.torch_dist.use
-  use_fp16        = cfg.fp16.use
-
 
   #Obtain dataset and model configurations here
-  if stage in ['continuous','seq']:
-    dataset_cfg = data_cfg.dataset.chart_data
-    model_cfg   = cfg.model.continuous_data.text_model
 
-  elif stage  == 'caption':
-    dataset_cfg = data_cfg.dataset.caption
-    model_cfg   = cfg.model.caption.hf_model
-
-  elif stage in ['chart_text', 'generate']:
+  if stage  == 'chart_text':
+    dataset_cfg = data_cfg.dataset.chart_text
+    model_cfg   = cfg.model.chart_text.hf_model
+  
+  elif stage in ['continuous','seq', 'generate']:
     dataset_cfg = data_cfg.dataset.chart_data
-    model_cfg   = cfg.model.chart_text_data.hf_model
+    model_cfg   = cfg.model.chart_text.hf_model
   
   #Combine into the same
   dataset_cfg = {**dataset_cfg, **model_cfg, 'debug': cfg.debug}
@@ -55,14 +49,14 @@ def init_dataloader(cfg, mode, stage, models, tokenizers, return_dataset=False):
     tokenizers=tokenizers, 
     dataset_name=data_cfg.name)
 
-  if stage in ['caption', 'chart_text']:
+  if stage == 'chart_text':
     module = models[stage].module if hasattr(models[stage], 'module') else models[stage]
     label_pad_token_id = -100 if dataset_cfg.get('ignore_pad_token_for_loss') else tokenizers[stage].pad_token_id
     data_collator = DataCollatorForSeq2Seq(
         tokenizers[stage],
         model=module,
         label_pad_token_id=label_pad_token_id,
-        pad_to_multiple_of=8 if use_fp16 else None,
+        pad_to_multiple_of=None,
       )
   else:
     data_collator = train_dataset.collate_fn
@@ -115,21 +109,18 @@ def select_dataset(mode, stage, root, dataset_cfg, tokenizers, dataset_name='pmc
   train_data = pickle_open(train_path)
   val_data = pickle_open(val_path)
 
-  if stage == 'continuous':
+  if stage == 'chart_text':
+    train_ds = PmcChartTextDataset(data=train_data, tokenizer1=tokenizers['chart_text'],**dataset_cfg)
+    val_ds   = PmcChartTextDataset(data=val_data, tokenizer1=tokenizers['chart_text'], **val_cfg)
+  elif stage == 'continuous':
     train_ds = PmcContinuousDataset(data=train_data, **dataset_cfg)
     val_ds   = PmcContinuousDataset(data=val_data, **val_cfg)
   elif stage == 'seq':
     train_ds = PmcSeqDataset(data=train_data, tokenizer=tokenizers['seq'], **dataset_cfg)
     val_ds   = PmcSeqDataset(data=val_data, tokenizer=tokenizers['seq'], **val_cfg)
   elif stage == 'generate':
-    train_ds = PmcGenerateDataset(data=train_data, tokenizer1=tokenizers['caption'], tokenizer2=tokenizers['chart_text'],**dataset_cfg)
-    val_ds   = PmcGenerateDataset(data=val_data, tokenizer1=tokenizers['caption'], tokenizer2=tokenizers['chart_text'], **val_cfg)   
-  elif stage == 'caption':
-    train_ds = PmcCaptionDataset(data=train_data, tokenizer1=tokenizers['caption'], **dataset_cfg)
-    val_ds   = PmcCaptionDataset(data=val_data, tokenizer1=tokenizers['caption'], **val_cfg)
-  elif stage == 'chart_text':
-    train_ds = PmcChartTextDataset(data=train_data, tokenizer1=tokenizers['caption'], tokenizer2=tokenizers['chart_text'],**dataset_cfg)
-    val_ds   = PmcChartTextDataset(data=val_data, tokenizer1=tokenizers['caption'], tokenizer2=tokenizers['chart_text'], **val_cfg)
+    train_ds = PmcGenerateDataset(data=train_data, tokenizer1=tokenizers['chart_text'], **dataset_cfg)
+    val_ds   = PmcGenerateDataset(data=val_data, tokenizer1=tokenizers['chart_text'], **val_cfg)   
   else:
     raise NotImplementedError()
 

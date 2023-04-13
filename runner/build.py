@@ -6,17 +6,15 @@
 # ---------------------------------------------------------------
 
 from .gen import GenRunner
-from .caption import CaptionRunner
+from .text import ChartTextRunner
 from .continuous import ContinuousRunner
 from .seq import SeqRunner
 
 def get_runners(cfg, stage):
   if stage == 'generate':
     runner = GenRunner
-  elif stage == 'caption':
-    runner = CaptionRunner
   elif stage == 'chart_text':
-    runner = CaptionRunner
+    runner = ChartTextRunner
   elif stage == 'continuous':
     runner = ContinuousRunner
   elif stage == 'seq':

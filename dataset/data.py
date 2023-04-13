@@ -20,7 +20,6 @@ from .base import (
 class PmcDataDataset(BaseDataset):
   def __init__(self, data, 
                 tokenizer1, 
-                tokenizer2=None, 
                 active_tasks=None, 
                 scale_mode='log10', 
                 scale_eps=1.00001, scale_floor=-1.0, window_size=16, widen_rate=0.0, max_widen_len=1, 
@@ -35,7 +34,6 @@ class PmcDataDataset(BaseDataset):
     self.active_tasks = ['task6'] if active_tasks is None else active_tasks
     self.active_charts = [] 
 
-    self.tokenizer2 = tokenizer1 if tokenizer2 is None else tokenizer2
     self.max_source_len2 = max_source_len if max_source_len2 is None else max_source_len2
     self.max_target_len2 = max_target_len if max_target_len2 is None else max_target_len2
 
@@ -417,7 +415,7 @@ class PmcDataDataset(BaseDataset):
             txt_raw = collector
     
         txt_inputs, txt_labels = self._tokenize(
-          self.tokenizer2, txt_raw, 
+          self.tokenizer1, txt_raw, 
           max_source_len=self.max_source_len2, 
           max_target_len=self.max_target_len2, 
           is_target=True, shift_right=True)
@@ -445,11 +443,11 @@ class PmcDataDataset(BaseDataset):
     for lbl in label:
       pad_len = max(col_counts) - lbl.size(0)
       if pad_len > 0:
-        pad = torch.ones((pad_len, max_token_len), dtype=torch.int32) * self.tokenizer2.pad_token_id
+        pad = torch.ones((pad_len, max_token_len), dtype=torch.int32) * self.tokenizer1.pad_token_id
         lbl = torch.cat([lbl, pad], dim=0)
       padded_labels.append(lbl)
     label = torch.stack(padded_labels, dim=0)
-    label[label == self.tokenizer2.pad_token_id] = PAD_IDX
+    label[label == self.tokenizer1.pad_token_id] = PAD_IDX
     all_txt_labels['input_ids'] = label
 
     return all_txt_inputs, all_txt_labels

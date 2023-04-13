@@ -32,14 +32,11 @@ from transformers.models.t5.modeling_t5 import T5Stack
 
 from torch.utils.data import DataLoader
 
-
 def init_model(cfg, mode, stage, device_id):
   
   use_distributed = cfg.torch_dist.use
   use_deepspeed   = cfg.torch_dist.deepspeed
   active_models   = cfg.model.active
-
-
 
   if cfg.rank == 0:
     print("Active models         : {}".format(active_models))
@@ -47,21 +44,11 @@ def init_model(cfg, mode, stage, device_id):
   models, toks, opts, schs, colls, loaders = {}, {}, {}, {}, {}, {}
   train_ds, val_ds = {},{}
 
-  if 'caption' in active_models or stage in ['caption','chart_text']:
-    load_opt = 'caption' in active_models or stage == 'caption'
-
-    llm, toks['caption'], opts['caption'] = init_caption_model(
-      cfg, device_id, mode, load_opt=load_opt)
-    
-    if 'caption' in active_models:
-      models['caption'] = llm
-
-  if cfg.eval.ksm.active and stage in ['caption', 'language', 'chart_text']:
-    models['ksm'], toks['ksm'] = init_ksm_model(cfg)
-
   if 'chart_text' in active_models or stage == 'chart_text':
-    load_opt = 'chart_text' in active_models or stage == 'chart_text'
     models['chart_text'], toks['chart_text'], opts['chart_text'] = init_chart_text_model(cfg, device_id)
+
+    if cfg.eval.ksm.active:
+      models['ksm'], toks['ksm'] = init_ksm_model(cfg)
 
   if 'continuous' in active_models or stage in ['continuous', 'seq']:
     models['continuous'], opts['continuous'] = init_continuous_model(cfg)
@@ -97,7 +84,7 @@ def init_model(cfg, mode, stage, device_id):
           opt=opts.get(_stage), 
           dataset=train_ds.get(_stage), 
           data_collator=colls.get(_stage), 
-          is_transformer=True if _stage == 'caption' else False
+          is_transformer=True if _stage == 'chart_text' else False
           )
   elif device_id is not None:
     for _stage in models.keys():
@@ -193,11 +180,14 @@ def init_continuous_model(cfg):
     block_size=max_blocks.series + 1, emb_dim=vq_cfg.emb_dim1)
 
   vq1_kwargs = {
-    'num_embeddings': vq_cfg.n_emb1,
-    'embedding_dim': vq_cfg.emb_dim1,
+    'n_emb': vq_cfg.n_emb1,
+    'emb_dim': vq_cfg.emb_dim1,
     'beta': vq_cfg.beta,
-    'use_fp16': use_fp16
+    'tiled': vq_cfg.tiled,
+    'ema_update': vq_cfg.ema_update,
+    'random_restart': vq_cfg.random_restart
     }
+
   vq_layer1 = get_vq_layer(vq_cfg.name, **vq1_kwargs)
 
   ################################
@@ -209,10 +199,12 @@ def init_continuous_model(cfg):
   mhd_layer = None
   if mhd_cfg.use:
     vq2_kwargs = {
-      'num_embeddings': vq_cfg.n_emb2,
-      'embedding_dim': vq_cfg.emb_dim2,
+      'n_emb': vq_cfg.n_emb2,
+      'emb_dim': vq_cfg.emb_dim2,
       'beta': vq_cfg.beta,
-      'use_fp16': use_fp16
+      'tiled': vq_cfg.tiled,
+      'ema_update': vq_cfg.ema_update,
+      'random_restart': vq_cfg.random_restart
       }
 
     vq_layer2 = get_vq_layer(vq_cfg.name, **vq2_kwargs)
@@ -350,7 +342,7 @@ def init_disc_model(cfg, device_id):
   return model, opt
 
 def init_chart_text_model(cfg, device_id, sep_token='<SEP>'):
-  model_cfg = cfg.model.chart_text_data.hf_model
+  model_cfg = cfg.model.chart_text.hf_model
   
   hf_config = AutoConfig.from_pretrained(
         model_cfg.name, cache_dir=cfg.cache_dir
@@ -421,58 +413,6 @@ def init_seq_llm_model(cfg):
 
   return model, tokenizer
 
-def init_caption_model(cfg, device_id, load_model=True, load_opt=True):
-  sep_token       = cfg.data.dataset.chart_data.sep_token
-  
-  #Setup transformer
-  model_cfg = cfg.model.caption.hf_model
-
-  hf_config = AutoConfig.from_pretrained(
-        model_cfg.name, cache_dir=cfg.cache_dir, 
-        )
-  
-  tokenizer = AutoTokenizer.from_pretrained(
-        model_cfg.name,
-        use_fast=model_cfg.use_fast, cache_dir=cfg.cache_dir, 
-        )
-        
-  num_added_toks = tokenizer.add_tokens([sep_token], special_tokens=True)
-
-  model = None
-  opt = None
-
-  if load_model:
-    model = AutoModelForSeq2SeqLM.from_pretrained(
-          model_cfg.name,
-          from_tf=False, 
-          config=hf_config, cache_dir=cfg.cache_dir, 
-          )
-
-    model.resize_token_embeddings(len(tokenizer))
-    if cfg.rank == 0:
-      print("Caption cfg | backbone={} total tokens={} ".format(
-        model_cfg.name,  len(tokenizer)))
-
-    if model.config.decoder_start_token_id is None:
-        raise ValueError("Make sure that `config.decoder_start_token_id` is correctly defined")
-
-  if load_opt:
-    if device_id is not 'cpu':
-      model.cuda(device_id)
-
-    params = list(filter(lambda p: p.requires_grad, model.parameters()))
-    lr = cfg.train.optim.learning_rate
-    betas = cfg.train.optim.betas
-    if cfg.train.optim.type == 'AdamW':
-      opt = torch.optim.AdamW(params, lr=lr, betas=betas)
-    elif cfg.train.optim.type == 'Adam':
-      opt = torch.optim.Adam(params, lr=lr, betas=betas)
-    else:
-      raise NotImplementedError()
-
-  return model, tokenizer, opt
-
-
 def init_ksm_model(cfg):
 
   model_cfg = cfg.eval.ksm  
@@ -504,8 +444,8 @@ def init_seq_model(cfg, shared, device_id, mode, stage):
   vq_cfg = cd_cfg.vq
   mhd_cfg = cd_cfg.mhd
 
-  block_size1 = cfg.model.caption.hf_model.max_source_len
-  block_size2 = cfg.model.caption.hf_model.max_target_len
+  block_size1 = cfg.model.chart_text.hf_model.max_source_len
+  block_size2 = cfg.model.chart_text.hf_model.max_target_len
   block_size = block_size1 + block_size2
 
   emb_len1 = vq_cfg.emb_len1
@@ -559,7 +499,6 @@ def init_seq_model(cfg, shared, device_id, mode, stage):
   if device_id is not 'cpu':
     model.cuda(device_id)
     
-  #if mode == 'train' and stage == 'seq':
   params = list(filter(lambda p: p.requires_grad, model.parameters()))
 
   lr = cfg.train.optim.learning_rate
@@ -621,7 +560,7 @@ def create_ds_config(cfg):
 
   ds_cfg = {
     "tensorboard":{
-      "enabled": True,
+      "enabled": False,
       "output_path": cfg.tb_dir,
       "job_name": cfg.exp_name,
     },

@@ -26,12 +26,13 @@ data:
   path: 
     home: 
   dataset:
-    caption:
+    chart_text:
       tgt_token: <mask_1>
       window_size: 16
       widen_rate: 0.1
       max_widen_len: 1
       min_sent_len: 10
+      chart_text_output: ['categorical','series','axis','caption']
     chart_data:
       active_tasks: ['task6']
       active_charts: []
@@ -39,25 +40,12 @@ data:
       scale_mode: log10
       scale_eps: [1.100001, 1.100001]
       scale_floor: [0.000001, 0.000001]
-      chart_text_input: ['caption']
-      chart_text_output: ['categorical','series','axis']
       sep_token: <SEP>
 model:
-  active: ['continuous']
-  caption:
-    hf_model: 
-      multihead: False
-      name: google/t5-v1_1-large
-      tgt_token: <mask_1>
-      max_source_len: 1024 
-      max_target_len: 256 
-      pad_to_max_len: True
-      ignore_pad_token_for_loss: True
-      use_fast: True
-  chart_text_data:
+  active: []
+  chart_text:
     name: v0
     hf_model: 
-      tasks: ['categorical', 'series_name', 'axis']
       name: google/t5-v1_1-large
       tgt_token: <mask_1>
       model_max_length: 512
@@ -70,14 +58,6 @@ model:
     name: v2
     active: ['scale', 'continuous'] 
     use_pos_embs: true
-    text_model:
-      name: t5-small
-      model_max_length: 512
-      max_source_len2: 8
-      max_target_len2: 8 
-      pad_to_max_len: True
-      ignore_pad_token_for_loss: True
-      use_fast: True
     encoder:
       chart_type_conditional: False
       max_blocks:
@@ -85,14 +65,14 @@ model:
         points: 256
       conv:
         channels: [256, 128, 64]
-        kernels: [1,1,1,1]
+        kernels: [3,3,3,2]
         stride: 1
-        padding: 0
+        padding: 1
         use_bn: false
         n_res_block: 2
         n_res_channel: 32
-        res_kernels: [1,1]
-        res_padding: 0
+        res_kernels: [3,1]
+        res_padding: 1
       transformer:
         use: true
         name: gpt
@@ -101,26 +81,26 @@ model:
     decoder:
       chart_type_conditional: True
       conv:
-        channels: [32, 64, 128] #256
-        kernels: [1,1,1,1]
+        channels: [32, 64, 128] 
+        kernels: [3,3,3,2]
         stride: 1
-        padding: 0
+        padding: 1
         use_bn: false
         n_res_block: 2
         n_res_channel: 32
-        res_kernels: [1,1]
-        res_padding: 0
+        res_kernels: [3,1]
+        res_padding: 1
         use_proj: false
       transformer:
         use: true
-        name: t5_decoder #gpt
+        name: t5_decoder 
         n_layer: 4
         n_head: 4
         d_kv: 8
         num_buckets: 8
         max_distance: 32
       scale:
-        n_head: 1 #5 #1
+        n_head: 1 
     disc:
       use: False
       disc_start: 100
@@ -131,19 +111,19 @@ model:
       use_pos_embs: True
       conv:
         channels: [256, 128, 64]
-        kernels: [1,1,1,1]
+        kernels: [3,3,3,2]
         stride: 1
-        padding: 0
+        padding: 1
         use_bn: false
         n_res_block: 2
         n_res_channel: 32
-        res_kernels: [1,1]
-        res_padding: 0
+        res_kernels: [3,1]
+        res_padding: 1
       transformer:
         use: true
         name: gpt
         n_layer: 4
-        n_head: 1
+        n_head: 4
     vq:
       name: vq
       emb_dim1: 32
@@ -151,15 +131,18 @@ model:
       n_emb1: 128
       n_emb2: 128
       emb_len1: 16
-      emb_len2: 1
+      emb_len2: 12
       beta: 0.25
+      ema_update: true
+      random_restart: true
+      tiled: true
     mhd:
-      use: False
+      use: true
       name: mhd1d
       bottleneck: False
-      bottleneck_dim: 16
-      hypothese_count: 1024 
-      hypothese_bsz: 1024
+      bottleneck_dim: 64
+      hypothese_count: 256 
+      hypothese_bsz: 256
       residual: True
       loss_reduce: mean
       dist_reduce: mean
@@ -175,6 +158,24 @@ model:
         n_res_block: 2
         res_kernels: [3,1]
         n_res_channel: 8
+    fid:
+      use_pos_embs: True
+      enc_out_dim: 32
+      conv:
+        channels: [256, 128, 64]
+        kernels: [3,3,3,2]
+        stride: 1
+        padding: 1
+        use_bn: false
+        n_res_block: 2
+        n_res_channel: 32
+        res_kernels: [3,1]
+        res_padding: 1
+      transformer:
+        use: true
+        name: gpt
+        n_layer: 4
+        n_head: 4
     loss_fn:
       scale: l1
       continuous: mse

@@ -4,9 +4,11 @@ import yake
 
 SIM_PAIRS = [
     ('all_text_kw', 'captions_kw'),
+    ('all_text_kw', 'axis_words'),
     ('all_text_kw', 'categorical_words'),
     ('all_text_kw', 'series_words'),
     ('all_text_kw', 'categ_and_series_words'),
+    ('captions_kw', 'axis_words'),
     ('captions_kw', 'categorical_words'),
     ('captions_kw', 'series_words'),
     ('captions_kw', 'categ_and_series_words'),
@@ -33,7 +35,7 @@ def embed_and_encode(tokens, model, device):
     return output
 
 def tokenize_keywords(d, tokenizer, model, max_source_len, device):
-    extract_list = ['captions_kw','all_text_kw','categorical_words','series_words']
+    extract_list = ['captions_kw','all_text_kw','categorical_words','series_words','axis_words']
     embeddings = {}
     for name in extract_list:
         if len(d[name]):

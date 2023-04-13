@@ -49,9 +49,9 @@ class EvalLoopOutputwInputs(NamedTuple):
     num_samples: Optional[int]
     inputs: Optional[np.ndarray]
 
-class CaptionRunner(BaseRunner):
+class ChartTextRunner(BaseRunner):
   def __init__(self, stage, cfg):
-    super(CaptionRunner, self).__init__(cfg)
+    super(ChartTextRunner, self).__init__(cfg)
     self.stage = stage
 
     self.ignore_pad_token_for_loss = self.cfg.model.caption.hf_model.ignore_pad_token_for_loss

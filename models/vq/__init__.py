@@ -1,1 +1,1 @@
-from .vq_layer import VectorQuantizer
+from .vq_base import VectorQuantizer

@@ -23,7 +23,7 @@ from transformers.trainer_pt_utils import (
 from transformers import DataCollatorForSeq2Seq
 
 
-from .caption import CaptionRunner
+from .text import ChartTextRunner
 from dataset import PmcCaptionInferenceDataset
 from torch.utils.data import DataLoader, SequentialSampler
 
@@ -36,7 +36,7 @@ from utils import (
 )
 
 
-class GenRunner(CaptionRunner):
+class GenRunner(ChartTextRunner):
   def __init__(self, stage, cfg):
     super(GenRunner, self).__init__(stage, cfg)
     self.stage = stage
@@ -119,7 +119,7 @@ class GenRunner(CaptionRunner):
       #Append task to context
       task_contexts = [task_str + c for c in contexts]
 
-      inputs = self.tokenize(task_contexts, tokenizers['caption'])
+      inputs = self.tokenize(task_contexts, tokenizers['chart_text'])
 
       # Update the observed num examples
       observed_batch_size = find_batch_size(inputs)
@@ -130,7 +130,7 @@ class GenRunner(CaptionRunner):
               batch_size = observed_batch_size
               
       _, logits, _ = self.prediction_step(
-        models['caption'], tokenizer=tokenizers['caption'], 
+        models['chart_text'], tokenizer=tokenizers['chart_text'], 
         inputs=inputs, prediction_loss_only=False)
       
 
@@ -166,7 +166,7 @@ class GenRunner(CaptionRunner):
       model.eval()
     
 
-    all_tasks = ['series_name', 'chart_text', 'axis']
+    all_tasks = ['series_name', 'categorical', 'axis']
 
     # Initialize containers
     preds_host = {t: None for t in all_tasks}
