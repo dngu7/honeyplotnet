@@ -42,6 +42,9 @@ class BaseRunner(object):
     self.device_id = self.local_rank()
     self.device = f'cuda:{self.local_rank()}'
 
+    self.use_fid = cfg.eval.fid
+    self.fid_stats = None
+
     self.use_torch_dist = cfg.torch_dist.use
     self.display = cfg.train.intervals.display
     self.bsz = self.cfg.batch_size

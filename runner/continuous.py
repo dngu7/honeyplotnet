@@ -6,8 +6,12 @@
 # ---------------------------------------------------------------
 
 import os
+import numpy as np
+
 import torch
 import torch.distributed as dist
+
+from fid import calculate_frechet_distance
 
 from utils import (
   pickle_save, create_recon_plots
@@ -144,7 +148,7 @@ class ContinuousRunner(BaseRunner):
     if self.use_torch_dist:
       dist.barrier()
 
-  def eval(self, val_loader, models, tokenizers, metric_key_prefix='eval', epoch=0, create_sample=False, **kwargs):
+  def eval(self, val_loader, models, metric_key_prefix='eval', epoch=0, **kwargs):
 
     self.tracker.reset_all()
     iterator = val_loader.__iter__()
@@ -157,6 +161,11 @@ class ContinuousRunner(BaseRunner):
       if m is not None:
         m.eval()
     
+    fid_log = {}
+    if self.use_fid:
+      fid_log['train_fid'], fid_log['test_fid'] = self.compute_fid(val_loader, models)
+      self.tracker.add_metrics(split=metric_key_prefix, metrics=fid_log, metric_name='fid')
+
     if (epoch + 1) % self.cfg.eval.sample_epoch == 0:
       epoch_dir = os.path.join(self.cfg.sample_dirs[self.stage], "{}".format(epoch))
       if not os.path.exists(epoch_dir):
@@ -221,12 +230,13 @@ class ContinuousRunner(BaseRunner):
       dist.barrier()
     
     #Calculate scores for saving
-    score_names = ['metric/eval/row/total','metric/eval/col/total','metric/eval/scale/total','metric/eval/cont/total']
-    score = sum(self.tracker.get_loss('epoch', s) for s in score_names)
+    if self.use_fid:
+      score = fid_log['test_fid']
+    else:
+      score_names = ['metric/eval/row/total','metric/eval/col/total','metric/eval/scale/total','metric/eval/cont/total']
+      score = sum(self.tracker.get_loss('epoch', s) for s in score_names)
 
-    output = {}
-    output['score'] = score
-    return output
+    return {'score': score}
 
   def generate(self, val_loader, models, tokenizers, metric_key_prefix='generate', epoch=0):
   
@@ -322,3 +332,36 @@ class ContinuousRunner(BaseRunner):
     pickle_save(container, file_path)
       
 
+  def compute_fid(self, loader, models):
+    assert 'fid' in models and 'continuous' in models
+    iterator = loader.__iter__()
+
+    if self.use_torch_dist:
+      dist.barrier()
+
+    for m in models.values():
+      if m is not None:
+        m.eval()
+
+    act_container = []
+    
+    for (_, inputs) in iterator:
+      with torch.no_grad():
+        with self.autocast_smart_context_manager():
+          x_hat, _, _ = models['continuous'](inputs, is_train=False, temp=1.0)
+
+          activations, _, _ = models['fid'](x_hat)
+          act_container.append(activations)
+
+    act = np.concatenate(act_container, axis=0)
+    mu = np.mean(act, axis=0)
+    sigma = np.cov(act, rowvar=False)
+    
+    #Load existing fid scores
+    m1, s1, _ = self.fid_stats['train']
+    m2, s2, _ = self.fid_stats['test']
+
+    train_fid = calculate_frechet_distance(mu, sigma, m1, s1)
+    test_fid = calculate_frechet_distance(mu, sigma, m2, s2)
+
+    return train_fid, test_fid

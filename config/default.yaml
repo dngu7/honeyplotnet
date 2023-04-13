@@ -240,6 +240,7 @@ train:
     exp_name: /
     snapshot_file: /
 eval:
+  fid: True
   gen_steps: 2
   max_steps: 256
   sample_interval: 50

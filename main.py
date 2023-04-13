@@ -12,6 +12,7 @@ from state import State
 from dataset import init_dataloader 
 from runner import get_runners 
 from models import init_model, load_checkpoint 
+from fid import init_fid_model
 
 from utils import (
   load_cfg,
@@ -158,13 +159,18 @@ def main(config_file, mode, stage, work, debug, dist, seed, local_rank):
     cfg.device_id, cfg.rank, 
     cfg.torch_dist.use, 
     cfg.torch_dist.deepspeed)
+  
+  #Initialize pre-trained fid model
+  fid_stats = None
+  if cfg.eval.fid:
+    models['fid'], fid_stats = init_fid_model(cfg, load_path=cur_dir, device_id=cfg.device_id)
 
   runner = get_runners(cfg, stage)
   runner.global_step = state.global_step
   runner.metrics = state.metrics
+  runner.fid_stats = fid_stats
 
   eval_freq = cfg.train.intervals.eval
-  gen_freq  = cfg.train.intervals.gen
   start_epoch = state.epoch + 1
 
   if mode in ['eval', 'val', 'save'] or stage == 'generate': 
