@@ -28,10 +28,11 @@ class VectorQuantizer(torch.nn.Module):
         self.random_restart = random_restart
         
         self.init = False
-
-        self.embeddings = None
+        
+        # init function called during first pass.
         self.k_sum = None
         self.k_elem = None
+        self.register_buffer('embeddings', torch.zeros(self.n_emb, self.emb_dim).cuda())
 
     def _tile(self, x):
         d, ew = x.shape
@@ -45,17 +46,19 @@ class VectorQuantizer(torch.nn.Module):
     def init_codebook(self, x):
         self.init = True
 
-        if self.tiled:
-            y = self._tile(x)
-            embeds = y[torch.randperm(y.shape[0])][:self.n_emb]
-        else:
-            embeds = torch.nn.Embedding(self.n_emb, self.emb_dim).weight.to(x.device)
-            torch.nn.init.uniform_(embeds)
+        if self.embeddings.sum() == 0:
+            if self.tiled:
+                y = self._tile(x)
+                embeds = y[torch.randperm(y.shape[0])][:self.n_emb]
+            else:
+                embeds = torch.nn.Embedding(self.n_emb, self.emb_dim).weight.to(x.device)
+                torch.nn.init.uniform_(embeds)
 
-        dist.broadcast(embeds, 0)
-        assert embeds.shape == (self.n_emb, self.emb_dim)
-        self.embeddings = embeds
-        self.k_sum = self.embeddings
+            dist.broadcast(embeds, 0)
+            assert embeds.shape == (self.n_emb, self.emb_dim)
+            self.embeddings = embeds
+
+        self.k_sum = self.embeddings.clone()
         self.k_elem = torch.ones(self.n_emb, device=x.device)
 
     def restore_k(self, num_tokens=None, threshold=1.0):
@@ -77,8 +80,8 @@ class VectorQuantizer(torch.nn.Module):
             return self._forward(x)
 
     def sample_decoder(self, encoding_indices):
-        bs, x_dim, y_dim = encoding_indices.shape
-        output_shape = [bs, x_dim, y_dim, self.emb_dim]
+        bs, x_dim = encoding_indices.shape
+        output_shape = [bs, x_dim, self.emb_dim]
         
         flattened = torch.reshape(encoding_indices, [bs, -1])
         #encodings = F.one_hot(flattened, self.n_emb).to(self.dtype_float).to(encoding_indices.device)
@@ -186,7 +189,7 @@ class VectorQuantizer(torch.nn.Module):
     def get_code_indices(self, x):
 
         #Check if flat
-        if len(list(x.shape)) == 4:
+        if len(list(x.shape)) >= 3:
             x, _ = self.preprocess(x)
 
         if not self.init:
