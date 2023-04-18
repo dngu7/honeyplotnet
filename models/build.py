@@ -300,10 +300,8 @@ def init_disc_model(cfg, device_id):
   #### Encoder
   disc_conv_kwargs = disc_cfg.conv
   disc_conv_kwargs['channels'] = [max_blocks.points] + disc_conv_kwargs['channels'] 
-  #last_chn_enc = disc_conv_kwargs['channels'][-1]
 
   enc_conv = Conv1dEncoder(**disc_conv_kwargs)
-  #enc_proj1 = nn.Conv1d(last_chn_enc, vq_cfg.emb_len1, 1)
   
   enc_tf = None
   enc_tf = init_transformer(disc_cfg.transformer, 
