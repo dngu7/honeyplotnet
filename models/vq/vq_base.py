@@ -84,8 +84,6 @@ class VectorQuantizer(torch.nn.Module):
         output_shape = [bs, x_dim, self.emb_dim]
         
         flattened = torch.reshape(encoding_indices, [bs, -1])
-        #encodings = F.one_hot(flattened, self.n_emb).to(self.dtype_float).to(encoding_indices.device)
-        #quantized = torch.matmul(encodings, self.embeddings.weight)
         quantized = F.embedding(flattened, self.embeddings)
         
         quantized = torch.reshape(quantized, output_shape)
