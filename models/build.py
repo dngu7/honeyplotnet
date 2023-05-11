@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------
-# Copyright (c) __________________________ 2022.
+# Copyright (c) __________________________ 2023.
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
@@ -17,10 +17,10 @@ from torch.distributed.elastic.utils.data import ElasticDistributedSampler
 from .conv import Conv1dEncoder, Conv1dDecoder 
 from .continuous import ContinuousModel, Discriminator
 from .gpt import GPTNoEmbed
-from .gpt_wrap import CondGPT
 from .mh_dropout import MHDropoutNetRandom1D
 from models.vq import VectorQuantizer
 
+from .seq_model import init_seq_model
 from dataset import init_dataloader
 
 from transformers import (
@@ -57,16 +57,7 @@ def init_model(cfg, mode, stage, device_id):
       models['disc'], opts['disc'] = init_disc_model(cfg, device_id)
   
   if 'seq' in active_models or stage == 'seq':
-    ### init embeddings 
-    seq_llm, toks['seq'] = init_seq_llm_model(cfg)
-
-    if hasattr(seq_llm, 'model'):
-      shared = seq_llm.model.shared
-    else:
-      shared = seq_llm.shared
-
-    models['seq'], opts['seq'] = init_seq_model(
-      cfg, shared, device_id, mode, stage)
+    models['seq'], toks['seq'], opts['seq'] = init_seq_model(cfg, cfg.device_id, load_opt=True)
   
   if use_distributed:
     train_ds[stage], val_ds[stage], colls[stage] = init_dataloader(
@@ -435,80 +426,6 @@ def init_ksm_model(cfg):
     print("KSM CFG | backbone={}".format(model_cfg.name))
 
   return model, tokenizer
-
-
-def init_seq_model(cfg, shared, device_id, mode, stage):
-  cd_cfg = cfg.model.continuous_data
-  vq_cfg = cd_cfg.vq
-  mhd_cfg = cd_cfg.mhd
-
-  block_size1 = cfg.model.chart_text.hf_model.max_source_len
-  block_size2 = cfg.model.chart_text.hf_model.max_target_len
-  block_size = block_size1 + block_size2
-
-  emb_len1 = vq_cfg.emb_len1
-  emb_len2 = vq_cfg.emb_len2
-
-  #compute number of classes
-  n_emb1 = vq_cfg.n_emb1
-  n_emb2 = vq_cfg.n_emb2
-
-  n_emb2 = n_emb1 if n_emb2 < 0 else n_emb2
-  if n_emb1 > n_emb2:
-    n_class = max(n_emb2, n_emb1)
-    n_emb1, n_emb2 = n_class, n_class
-  
-  n_embd = shared.weight.shape[-1]
-
-  #Turn off gradients for embeddings
-  #shared.weight.requires_grad = False
-
-  print(f"LLM Emb | Shape={shared.weight.shape} Grad: {shared.weight.requires_grad}")
-
-  if not mhd_cfg.use:
-    n_classes = [n_emb1]
-    block_sizes = [block_size]
-    n_layers = [cfg.model.seq.gpt.n_layer]
-    n_heads = [cfg.model.seq.gpt.n_head]
-    n_embds = [n_embd]
-  else:
-    n_classes = [n_emb1, n_emb2]
-    block_sizes = [block_size, block_size]
-    n_layers = [cfg.model.seq.gpt.n_layer, cfg.model.seq.gpt.n_layer]
-    n_heads = [cfg.model.seq.gpt.n_head, cfg.model.seq.gpt.n_head]
-    n_embds = [n_embd, n_embd]
-
-  model = CondGPT(
-    shared=shared,
-    device_id=device_id,
-    use_fp16=cfg.fp16.use,
-    use_cond=mhd_cfg.use,
-    emb_len1=emb_len1,
-    emb_len2=emb_len2,
-    n_classes=n_classes,
-    block_sizes=block_sizes, 
-    n_layers=n_layers, 
-    n_heads=n_heads, 
-    n_embds=n_embds, 
-    )
-
-  #############################################
-
-  if device_id is not 'cpu':
-    model.cuda(device_id)
-    
-  params = list(filter(lambda p: p.requires_grad, model.parameters()))
-
-  lr = cfg.train.optim.learning_rate
-  betas = cfg.train.optim.betas
-  if cfg.train.optim.type == 'AdamW':
-    opt = torch.optim.AdamW(params, lr=lr, betas=betas)
-  elif cfg.train.optim.type == 'Adam':
-    opt = torch.optim.Adam(params, lr=lr, betas=betas)
-  else:
-    raise NotImplementedError()
-  
-  return model, opt
 
 def get_vq_layer(name, **kwargs):
   if name == 'vq':

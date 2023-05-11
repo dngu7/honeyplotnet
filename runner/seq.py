@@ -1,104 +1,131 @@
 # ---------------------------------------------------------------
-# Copyright (c) __________________________ 2022.
+# Copyright (c) ___ Limited 2023.
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 # ---------------------------------------------------------------
 
+from filelock import FileLock
+from typing import Dict, NamedTuple, Optional, Tuple, Union
+
 import os
+import nltk  
+import time
 import numpy as np
 import torch
-import torch.distributed as dist
-from torch.autograd import Variable
-from torch.nn import functional as F
 
-from utils import (
-  create_single_plot
+from transformers.trainer_pt_utils import (
+  find_batch_size, nested_concat, 
+  nested_numpify, nested_truncate,
+)
+
+
+from transformers.trainer_utils import ( 
+  EvalPrediction, denumpify_detensorize
 )
 
 from models.constant import CHART_TO_HEAD_IDX
 
-from .base import BaseRunner
+from .text import ChartTextRunner
 
-class SeqRunner(BaseRunner):
+try:
+    nltk.data.find("tokenizers/punkt")
+except (LookupError, OSError):
+    with FileLock(".lock") as lock:
+        nltk.download("punkt", quiet=True)
+
+
+class EvalLoopOutputwInputs(NamedTuple):
+    predictions: Union[np.ndarray, Tuple[np.ndarray]]
+    label_ids_text: Optional[np.ndarray]
+    label_ids_code: Optional[np.ndarray]
+    metrics: Optional[Dict[str, float]]
+    num_samples: Optional[int]
+    inputs: Optional[np.ndarray]
+
+class SeqRunner(ChartTextRunner):
   def __init__(self, stage, cfg):
-    super(SeqRunner, self).__init__(cfg)
-    self.stage = stage
+    super(SeqRunner, self).__init__(stage, cfg)
 
-  def sample_indices(self, logits, temp=1.0):
-    bsz = logits.size(0)
-    probs = F.softmax(logits / temp, dim=-1).data
-    probs = torch.flatten(probs, start_dim=0, end_dim=1)
-    cb_indices =  torch.multinomial(probs, 1)
-    cb_indices = cb_indices.reshape([bsz, -1])
-    return cb_indices
+  def compute_loss(self, models, inputs, text_lbls=None, code_lbls=None, return_outputs=False):
 
+    text_inputs = self._prepare_inputs(inputs['text'])
 
-  def eval_step(self, models, inputs):
-    models['continuous'].eval()
-    models['seq'].eval()
+    models['seq'].set_output('both')
+    text_logits, code_logits = models['seq'](**text_inputs)
 
-    with self.autocast_smart_context_manager():
-      with torch.no_grad():
-        if hasattr(models['continuous'], 'module'):
-          cb1 = models['continuous'].module.sample_codebook(inputs)
-        else:
-          cb1 = models['continuous'].sample_codebook(inputs)
+    loss = {}
+    if text_lbls is not None:
+      
+      label_len = text_lbls.shape[-1]
+      text_logits = text_logits[:,:label_len,:]
+      flat_text_logits = torch.flatten(text_logits, start_dim=0, end_dim=1)
+      text_loss = self.loss_fn(flat_text_logits, text_lbls.view(-1))
 
-        if len(cb1) == 2:
-          cb1, cb2 = cb1
-        else:
-          cb1, cb2 = cb1[0], None
+      if not text_loss.isnan().any():
+         loss['text'] = text_loss
+      
+    if code_lbls is not None:
+      label_len = code_lbls.shape[-1]
+      code_logits = code_logits[:,:label_len,:]
+      flat_code_logits = torch.flatten(code_logits, start_dim=0, end_dim=1)
+      code_loss = self.loss_fn(flat_code_logits, code_lbls.view(-1))
 
-        context_idx = inputs['captions']['input_ids']
-        attn_mask = inputs['captions']['attention_mask']
-
-        ct_idx = [CHART_TO_HEAD_IDX[ct] for ct in inputs['chart_data']['chart_type']]
-        ct_idx = torch.tensor(ct_idx, dtype=torch.long, device=self.device).view(-1,1)
-
-        _, _, _, loss_dict = models['seq'](
-          context_idx, attn_mask=attn_mask, tgt1=cb1, tgt2=cb2, tgt3=ct_idx)
-
-    loss_log = {}
-    total_loss = 0.0
-    for name, loss in loss_dict.items():
-      total_loss += loss
-      loss_log[name] = loss.detach().cpu()
-    return loss_log
-
-  def training_step(self, models, inputs):
-    models['continuous'].eval()
-    models['seq'].train()
+      if not code_loss.isnan().any():
+         loss['code'] = code_loss
+    
+    outputs = {'text': text_logits, 'code': code_logits}
+    return (loss, outputs, ) if return_outputs else loss
+  
+  def sample_code_labels(self, models, inputs):
 
     with self.autocast_smart_context_manager():
       with torch.no_grad():
         if hasattr(models['continuous'], 'module'):
-          cb1 = models['continuous'].module.sample_codebook(inputs)
+          cb1 = models['continuous'].module.sample_codebook(inputs['data'])
         else:
-          cb1 = models['continuous'].sample_codebook(inputs)
+          cb1 = models['continuous'].sample_codebook(inputs['data'])
 
       if len(cb1) == 2:
         cb1, cb2 = cb1
       else:
         cb1, cb2 = cb1[0], None
 
-      context_idx = inputs['captions']['input_ids']
-      attn_mask = inputs['captions']['attention_mask']
-
-      ct_idx = [CHART_TO_HEAD_IDX[ct] for ct in inputs['chart_data']['chart_type']]
+      ct_idx = [CHART_TO_HEAD_IDX[ct] for ct in inputs['data']['chart_type']]
       ct_idx = torch.tensor(ct_idx, dtype=torch.long, device=self.device).view(-1,1)
+      code_labels = torch.cat([ct_idx, cb1], dim=-1)
+      if cb2 is not None:
+        code_labels = torch.cat([code_labels, cb2], dim=-1)
+         
 
-      _, _, _, loss_dict = models['seq'](
-        context_idx, attn_mask=attn_mask, tgt1=cb1, tgt2=cb2, tgt3=ct_idx)
+      code_mask = torch.tensor([1 if c == 'data' else 0 for c in inputs['task']], dtype=torch.long, device=self.device).unsqueeze(-1)
+      inv_code_mask = torch.tensor([0 if c == 'data' else -100 for c in inputs['task']],dtype=torch.long, device=self.device).unsqueeze(-1)
+      code_labels = code_labels * code_mask + inv_code_mask
+      
+      #Create padding
+      pad_len = models['seq'].config.max_length - code_labels.shape[-1]
+      padding = torch.ones([code_labels.shape[0], pad_len], dtype=torch.long, device=self.device) * -100
+      code_labels = torch.cat([code_labels, padding], dim=-1)
 
+    return code_labels
+
+  def training_step(self, models, inputs):
+    
+    models['seq'].train()
+
+    with self.autocast_smart_context_manager():
+      code_lbls = self.sample_code_labels(models, inputs)
+      
+      _ = inputs['text'].pop('text')
+      text_lbls = inputs['text'].pop("labels")
+
+      loss_dict = self.compute_loss(models, inputs, text_lbls=text_lbls, code_lbls=code_lbls)
+  
     loss_log = {}
     total_loss = 0.0
     for name, loss in loss_dict.items():
       total_loss += loss
       loss_log[name] = loss.detach().cpu()
-
-    if self.use_torch_dist:
-      total_loss = total_loss.mean() 
     
     if self.gradient_accum_steps > 1 and not self.use_deepspeed:
       total_loss = total_loss / self.gradient_accum_steps
@@ -116,6 +143,7 @@ class SeqRunner(BaseRunner):
   def train(self, train_loader, models, tokenizers, opts, schs):   
 
     self.tracker.reset_all()
+
     tr_loss = torch.tensor(0.0).to(self.device_id)
 
     for stage, m in models.items():
@@ -133,6 +161,7 @@ class SeqRunner(BaseRunner):
     steps_in_epoch = len(iterator)
 
     for step, (_, inputs) in enumerate(iterator):
+
 
       loss_log = self.training_step(models, inputs)
 
@@ -179,136 +208,281 @@ class SeqRunner(BaseRunner):
     self.logger.info("E{:02d} (train) {}".format(self.epoch, self.tracker.loss_str('epoch')))
     self.update_writer('train')
 
-    if self.use_torch_dist:
-      dist.barrier()
+  def prediction_step(self, models, tokenizer, inputs, prediction_loss_only=False, ignore_keys=[]):
+    has_labels = 'labels' in inputs['text']
 
-  def eval(self, val_loader, models, tokenizers, metric_key_prefix='eval', epoch=0, temp=1.0, create_sample=False):
+    if 'text' in inputs['text']:
+      _ = inputs['text'].pop('text')
 
-    if self.use_torch_dist:
-      dist.barrier()
+    text_inputs = self._prepare_inputs(inputs['text'])
 
+    gen_kwargs = {
+            "max_length": self._max_length,
+            "num_beams": self._num_beams,
+            "synced_gpus": False,
+            "repetition_penalty": self._repetition_penalty,
+            "temperature": self._gen_temperature,
+            "return_text_only": True
+        }
+
+    if "attention_mask" in text_inputs:
+            gen_kwargs["attention_mask"] = text_inputs.get("attention_mask", None)
+    if "global_attention_mask" in inputs:
+        gen_kwargs["global_attention_mask"] = text_inputs.get("global_attention_mask", None)
+    
+    # prepare generation inputs
+    generation_inputs = text_inputs["input_ids"]
+    models['seq'].set_output('text')
+
+    if models['seq'].__class__.__name__ == 'DistributedDataParallel':
+      generated_tokens = models['seq'].module.generate(
+          generation_inputs,
+          **gen_kwargs,
+      )      
+    else:
+
+      generated_tokens = models['seq'].generate(
+          generation_inputs,
+          **gen_kwargs,
+      )
+    # in case the batch is shorter than max length, the output should be padded
+    if generated_tokens.shape[-1] < gen_kwargs["max_length"]:
+        generated_tokens = self._pad_tensors_to_max_len(
+          generated_tokens, gen_kwargs["max_length"], models['seq'], tokenizer)
+
+    tr_loss = 0.0
+    text_lbls = None
+    code_lbls = None
+    if has_labels:
+      with torch.no_grad():
+        with self.autocast_smart_context_manager():
+          text_lbls = inputs['text'].pop("labels")
+          code_lbls = self.sample_code_labels(models, inputs)
+          losses = self.compute_loss(models, inputs, text_lbls=text_lbls, code_lbls=code_lbls, return_outputs=False)
+
+          loss_log = {}
+          for k,v in losses.items():
+            if not v.isnan().any():
+              loss_log[k] = v.mean().cpu().detach().item()
+              tr_loss += v.mean().detach()
+
+          self.tracker.add_logs(split='eval', log=loss_log, total_loss=tr_loss)
+        
+    if prediction_loss_only:
+        return (tr_loss, None, None)
+
+    if text_lbls is not None:
+        if text_lbls.shape[-1] < gen_kwargs["max_length"]:
+            text_lbls = self._pad_tensors_to_max_len(text_lbls, gen_kwargs["max_length"], models['seq'], tokenizer)
+
+    return (tr_loss, generated_tokens, inputs, text_lbls, code_lbls)
+  
+  def eval_loop(self, cur_stage, loader, models, tokenizers, metric_key_prefix='eval', prediction_loss_only=False, test_count=None):
+    
+    self.tracker.reset_all()
+
+    iterator = loader.__iter__()
+    steps_in_epoch = len(iterator)
+
+    # Initialize containers
+    # losses/preds/labels on GPU/TPU (accumulated for eval_accumulation_steps)
+    losses_host = None
+    preds_host = None
+    labels_host_text = None
+    labels_host_code = None
+    inputs_host = None
+
+    # losses/preds/labels on CPU (final containers)
+    all_losses = None
+    all_preds = None
+    all_labels_text = None
+    all_labels_code = None
+    all_inputs = None
+    observed_num_examples = 0
+    batch_size = self.bsz
+
+    start_time = time.time()
+
+    for step, (_, inputs) in enumerate(iterator):
+
+      if test_count is not None and step > test_count:
+         break
+      else:
+         self.logger.info("Eval | {}/{} Time elapsed : {:.2f}s".format(step, test_count, time.time() - start_time))
+      
+      if isinstance(self.display, int) and step % self.display == 0 and step > 0:
+        self.logger.info("Eval | E{:02d} Step {:04d}/{:04d} ".format(self.epoch, step, self.cfg.eval.max_steps))
+
+      if isinstance(self.cfg.eval.max_steps, int) and step > self.cfg.eval.max_steps:
+        break
+
+      # Update the observed num examples
+      observed_batch_size = find_batch_size(inputs)
+      if observed_batch_size is not None:
+          observed_num_examples += observed_batch_size
+          # For batch samplers, batch_size is not known by the dataloader in advance.
+          if batch_size is None:
+              batch_size = observed_batch_size
+      
+      loss, logits, inputs, text_lbls, code_lbls = self.prediction_step(
+        models, tokenizer=tokenizers[cur_stage], 
+        inputs=inputs, prediction_loss_only=prediction_loss_only)
+
+      inputs_decode = inputs['text']["input_ids"] 
+
+      # Update containers on host
+      if loss is not None:
+        losses = self._nested_gather(loss.repeat(batch_size))
+        losses_host = losses if losses_host is None else torch.cat((losses_host, losses), dim=0)
+
+      if text_lbls is not None:
+        text_lbls = self._pad_across_processes(text_lbls)
+        text_lbls = self._nested_gather(text_lbls)
+        labels_host_text = text_lbls if labels_host_text is None else nested_concat(labels_host_text, text_lbls, padding_index=-100)
+        labels_host_code = code_lbls if labels_host_code is None else nested_concat(labels_host_code, code_lbls, padding_index=-100)
+
+      if inputs_decode is not None:
+        inputs_decode = self._pad_across_processes(inputs_decode)
+        inputs_decode = self._nested_gather(inputs_decode)
+        inputs_host = (
+            inputs_decode
+            if inputs_host is None
+            else nested_concat(inputs_host, inputs_decode, padding_index=-100)
+        )
+      
+      if logits is not None:
+        logits = self._pad_across_processes(logits)
+        logits = self._nested_gather(logits)
+
+        preds_host = logits if preds_host is None else nested_concat(preds_host, logits, padding_index=-100)
+      
+      # Gather all tensors and put them back on the CPU if we have done enough accumulation steps.
+      if self.eval_accumulation_steps is not None and (step + 1) % self.eval_accumulation_steps == 0:
+        if losses_host is not None:
+            losses = nested_numpify(losses_host)
+            all_losses = losses if all_losses is None else np.concatenate((all_losses, losses), axis=0)
+        if preds_host is not None:
+            logits = nested_numpify(preds_host)
+            all_preds = logits if all_preds is None else nested_concat(all_preds, logits, padding_index=-100)
+        if inputs_host is not None:
+            inputs_decode = nested_numpify(inputs_host)
+            all_inputs = (
+                inputs_decode
+                if all_inputs is None
+                else nested_concat(all_inputs, inputs_decode, padding_index=-100)
+            )
+        if labels_host_text is not None:
+            text_lbls = nested_numpify(labels_host_text)
+            all_labels_text = (
+                text_lbls if all_labels_text is None else nested_concat(all_labels_text, text_lbls, padding_index=-100)
+            )
+        if labels_host_code is not None:
+            code_lbls = nested_numpify(labels_host_code)
+            all_labels_code = (
+                code_lbls if all_labels_code is None else nested_concat(all_labels_code, code_lbls, padding_index=-100)
+            )
+
+        # Set back to None to begin a new accumulation
+        losses_host, preds_host, inputs_host, labels_host_text, labels_host_code = None, None, None, None, None
+
+
+    # Gather all remaining tensors and put them back on the CPU
+    if losses_host is not None:
+        losses = nested_numpify(losses_host)
+        all_losses = losses if all_losses is None else np.concatenate((all_losses, losses), axis=0)
+    if preds_host is not None:
+        logits = nested_numpify(preds_host)
+        all_preds = logits if all_preds is None else nested_concat(all_preds, logits, padding_index=-100)
+    if inputs_host is not None:
+        inputs_decode = nested_numpify(inputs_host)
+        all_inputs = (
+            inputs_decode if all_inputs is None else nested_concat(all_inputs, inputs_decode, padding_index=-100)
+        )
+    if labels_host_text is not None:
+        text_lbls = nested_numpify(labels_host_text)
+        all_labels_text = text_lbls if all_labels_text is None else nested_concat(all_labels_text, text_lbls, padding_index=-100)
+    if labels_host_code is not None:
+        code_lbls = nested_numpify(labels_host_code)
+        all_labels_code = code_lbls if all_labels_code is None else nested_concat(all_labels_code, code_lbls, padding_index=-100)
+
+    num_samples = steps_in_epoch
+    # Number of losses has been rounded to a multiple of batch_size and in a distributed training, the number of
+    # samplers has been rounded to a multiple of batch_size, so we truncate.
+    if all_losses is not None:
+        all_losses = all_losses[:num_samples]
+    if all_preds is not None:
+        all_preds = nested_truncate(all_preds, num_samples)
+    if all_labels_text is not None:
+        all_labels_text = nested_truncate(all_labels_text, num_samples)
+    if all_labels_code is not None:
+        all_labels_code = nested_truncate(all_labels_code, num_samples)
+    if all_inputs is not None:
+        all_inputs = nested_truncate(all_inputs, num_samples)
+  
+    # Metrics!
+    if self.compute_metrics is not None and all_preds is not None and all_labels_text is not None:
+      if self.include_inputs_for_metrics:
+          metrics = self.compute_metrics(
+              EvalPrediction(predictions=all_preds, label_ids=all_labels_text, inputs=all_inputs),
+              tokenizers[cur_stage]
+          )
+      else:
+          metrics = self.compute_metrics(
+            EvalPrediction(predictions=all_preds, label_ids=all_labels_text),
+            tokenizers[cur_stage])
+    else:
+        metrics = {}
+    
+    metrics = denumpify_detensorize(metrics)
+
+    if all_losses is not None:
+        metrics["loss"] = all_losses.mean().item()
+
+    
+    return EvalLoopOutputwInputs(predictions=all_preds, label_ids_text=all_labels_text,  label_ids_code=all_labels_code, 
+                                 metrics=metrics, num_samples=num_samples, inputs=all_inputs), all_inputs
+
+
+  def eval(self, val_loader, models, tokenizers, metric_key_prefix='eval', epoch=0, temp=1.0, create_sample=False, prediction_loss_only=False, test_count=None, **kwargs):
+    
     for m in models.values():
       if m is not None:
         m.eval()
 
-    self.tracker.reset_all()
-    tr_loss = torch.tensor(0.0).to(self.device_id)
-    for _, (_, inputs) in enumerate(val_loader.__iter__()):
-      loss_log = self.eval_step(models, inputs)
-      tr_loss_step = sum(list(loss_log.values()))
-      tr_loss += tr_loss_step
-      self.tracker.add_logs(split='eval', log=loss_log, total_loss=tr_loss_step)
+    predict_results, all_inputs = self.eval_loop(self.stage, val_loader, models, tokenizers, metric_key_prefix=metric_key_prefix, prediction_loss_only=prediction_loss_only, test_count=test_count)
 
-    self.logger.info("E{:02d} (eval) {}".format(self.epoch, self.tracker.loss_str('epoch')))
-    self.update_writer('eval')
+    if self.rank() == 0 and test_count is None:
+      predictions = tokenizers[self.stage].batch_decode(
+          predict_results.predictions, skip_special_tokens=True, clean_up_tokenization_spaces=True
+      )
 
-    epoch_dir = os.path.join(self.cfg.sample_dirs[self.stage], "{}".format(epoch))
-
-    if create_sample:
-      act_container = []    
-      for step, (indices, inputs) in enumerate(val_loader.__iter__()):
-        with torch.no_grad():
-          with self.autocast_smart_context_manager():
-
-            chart_types = inputs['chart_data']['chart_type']
-            context_idx = inputs['captions']['input_ids']
-            attn_mask   = inputs['captions']['attention_mask']
-
-            cb1_logits, cb2_logits, ct_idx, _ = models['seq'](
-              context_idx, attn_mask=attn_mask)
-          
-            cb_ind1 = self.sample_indices(cb1_logits, temp=temp)
-            cb_ind2 = self.sample_indices(cb2_logits, temp=temp)
-            
-            if ct_idx is not None:
-              ct_idx = [CHART_TO_HEAD_IDX[ct] for ct in chart_types]
-              ct_idx = torch.tensor(ct_idx, dtype=torch.long, device=self.device).view(-1,1)
-
-            #print("cb_ind1", cb_ind1.shape, "cb_ind2", cb_ind2.shape)
-            if hasattr(models['continuous'], 'module'):
-              x_hat = models['continuous'].module.reconstruct_from_indices(
-                ct_idx=ct_idx,
-                cb_ind1=cb_ind1, 
-                cb_ind2=cb_ind2, 
-                temp=temp)
-            else:
-              x_hat = models['continuous'].reconstruct_from_indices(
-                ct_idx=ct_idx,
-                cb_ind1=cb_ind1, 
-                cb_ind2=cb_ind2, 
-                temp=temp)
-            
-            #Required for labels
-            x_hat['chart_type'] = chart_types
-
-        if create_sample or ((step + 1) % self.cfg.eval.sample_interval == 0):
-          if not os.path.exists(epoch_dir):
-            os.makedirs(epoch_dir, exist_ok=True)
-
-          #print("create", step, epoch_dir)
-          #self.to_vega_json(x_hat, prefix=metric_key_prefix, step=step, epoch=epoch)
-          text_data = [val_loader.dataset.get_text_with_idx(ind) for ind in indices]
-          #create_recon_plots(inputs, x_hat, text_data, step, epoch_dir)
-          create_single_plot(x_hat, text_data, epoch_dir, step)
-
-    #Calculate scores for saving
-    score_names = ['loss/eval/total']
-    score = sum(self.tracker.get_loss('epoch', s) for s in score_names)
-
-    output = {}
-    output['score'] = score
-    return output
-
-  def create_generator_seq(self, vae_model, seq_model, batch_size, num_total_samples, sample_count, seq_cond_model=None):
-
-    num_iters = int(np.ceil(num_total_samples / batch_size))
-    total_samples = 0
-    temp = 1.0
-    ind_2 = None
-
-    if self.use_torch_dist:
-      vae_module = vae_model.module
-    else:
-      vae_module = vae_model
-    
-    p1 = self.seq_shape1
-    p2 = self.seq_shape2
-    if self.cfg.model.backbone == 'vq2':
-      p1, p2 = p2, p1
-      
-    for _ in range(num_iters):
-      if total_samples > num_total_samples:
-          break
-      
-      ind_1 = self.sample_seq_model(seq_model, p1, temp=temp)
-
-      if seq_cond_model is not None:
-        ind_2 = self.sample_seq_model(seq_cond_model, 
-          p2, temp=temp, condition=Variable(ind_1))
-
-      with torch.no_grad():
-        outputs = vae_module.reconstruct_from_indices(
-          ind_1=ind_1, ind_2=ind_2, sample_count=sample_count)
-
-      if 'xk_hat' not in outputs:
-        out = outputs['xc_hat']
+      if all_inputs is not None:
+        contexts = tokenizers[self.stage].batch_decode(
+            all_inputs, skip_special_tokens=True, clean_up_tokenization_spaces=True
+        )
       else:
-        out = torch.flatten(outputs['xk_hat'], start_dim=0, end_dim=1) 
+        contexts = [''] * len(predictions)
 
-      num_total_samples += out.size(0)
-      yield out.float()
+      ksm_scores = self.compute_ksm_scores(
+          predict_results.predictions, predict_results.label_ids_text, contexts, models, tokenizers, seperator='<SEP>')
+      
+      self.tracker.add_metrics(ksm_scores, metric_key_prefix, 'ksm')
 
+      print(f"Writing samples to output: {self.cfg.sample_dirs[self.stage]}")
+      for pidx, (pred, context) in enumerate(zip(predictions, contexts)):
+        if context != 'data':
+          output_prediction_file = os.path.join(self.cfg.sample_dirs[self.stage], "generated_predictions_e{}_{}.txt".format(epoch, pidx))
 
-  def sample_seq_model(self, model, size, temp=1.0, condition=None):
-    cache = {}
-    ind = torch.zeros(size, dtype=torch.long)
-    ind = ind.cuda(self.device_id)
-    with torch.no_grad():
-      for i in range(size[-1]):
-        for j in range(size[-2]):
-          out, cache = model(Variable(ind), condition=condition, cache=cache)
-          probs = F.softmax(out[:, :, j, i] / temp, dim=1).data
-          val =  torch.multinomial(probs, 1).view(-1)
-          ind[:, j, i] = val
+          text = "OUTPUT: {} \n\n INPUT: {}".format(pred, context)
+          with open(output_prediction_file, "w") as writer:
+            writer.write(text)
 
-    return ind
+    metrics = predict_results.metrics
+    self.tracker.add_metrics(metrics, metric_key_prefix, 'rouge')
+    self.logger.info("E{:02d} (eval) {} {}".format(self.epoch, 
+    self.tracker.loss_str('epoch'), 
+    self.tracker.metric_str('epoch', stage=self.stage)))
+    outputs = {'score': metrics['loss']}
+    return outputs
+
+  

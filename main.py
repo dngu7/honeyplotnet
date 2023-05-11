@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------
-# Copyright (c) __________________________ 2022.
+# Copyright (c) __________________________ 2023.
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
@@ -213,7 +213,7 @@ def main(config_file, mode, stage, work, debug, dist, seed, local_rank):
         results = runner.eval(
           val_loader, models, tokenizers, metric_key_prefix='eval', epoch=epoch, create_sample=(mode == 'eval'))
 
-        if stage in ['caption', 'chart_text']:
+        if stage in ['chart_text']:
           best_score = sum([results.metrics[m] for m in ["rouge1", "rouge2", "rougeL"]])
           is_best = best_score > state.best_score[stage]
           state.best_score[stage] = max(best_score, state.best_score[stage])
@@ -223,7 +223,7 @@ def main(config_file, mode, stage, work, debug, dist, seed, local_rank):
           state.best_score[stage] = min(best_score, state.best_score[stage])
 
         if best_score is not None:
-          runner.logger.info("Score update | Best Score: {:.4f} Current: {:.4f}  | is_best: {}".format(state.best_score[stage], best_score, is_best))
+          runner.logger.info("Score update | best: {:.4f} last: {:.4f} [{}]".format(state.best_score[stage], best_score, is_best))
 
       state.scaler[stage] = runner.scaler
       state.schs[stage]   = runner.lr_scheduler

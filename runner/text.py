@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------
-# Copyright (c) __________________________ 2022.
+# Copyright (c) __________________________ 2023.
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
@@ -133,16 +133,12 @@ class ChartTextRunner(BaseRunner):
     if self.gradient_accum_steps > 1 and not self.use_deepspeed:
       loss = loss / self.gradient_accum_steps
     
-    if not torch.isnan(loss).any():
-      if self.do_grad_scaling:
-        self.scaler.scale(loss).backward()
-      elif self.use_deepspeed:
-        model.backward(loss)
-      else:
-        loss.backward()
+    if self.do_grad_scaling:
+      self.scaler.scale(loss).backward()
+    elif self.use_deepspeed:
+      model.backward(loss)
     else:
-      print("NaN found in loss")
-    
+      loss.backward()
 
     return loss.detach()
 
@@ -250,9 +246,6 @@ class ChartTextRunner(BaseRunner):
       self.logger.info("E{:02d} (eval) {} {}".format(self.epoch, 
       self.tracker.loss_str('epoch'), 
       self.tracker.metric_str('epoch', stage=self.stage)))
-          
-    if self.use_torch_dist:
-      dist.barrier()
 
     return predict_results
 
@@ -261,7 +254,7 @@ class ChartTextRunner(BaseRunner):
     sim_scores = {}
     for pidx, (pred_toks, label, context) in enumerate(zip(pred_tokens, labels, contexts)):
 
-      if self.stage == 'chart_text':
+      if self.stage in ['chart_text', 'seq']:
         task = None
         for t, prepend_str in TASK2PREPEND.items():
           if context.startswith(prepend_str):
@@ -274,7 +267,9 @@ class ChartTextRunner(BaseRunner):
         task = 'caption'
       else:
         raise ValueError(f"Stage not recognised for ksm: {self.stage}")
-
+      
+      if task == 'data':
+         continue
       #Create key words for context and task
 
       if task in ['chart_text', 'series_name', 'axis','categorical']:
@@ -361,7 +356,7 @@ class ChartTextRunner(BaseRunner):
           if batch_size is None:
               batch_size = observed_batch_size
               
-      loss, logits, labels = self.prediction_step(
+      loss, logits, labels, inputs  = self.prediction_step(
         models[cur_stage], tokenizer=tokenizers[cur_stage], 
         inputs=inputs, prediction_loss_only=prediction_loss_only)
 
@@ -534,7 +529,7 @@ class ChartTextRunner(BaseRunner):
     else:
         labels = None
 
-    return (loss, generated_tokens, labels)
+    return (loss, generated_tokens, labels, inputs)
     
 
   def _pad_tensors_to_max_len(self, tensor, max_length, model, tokenizer):

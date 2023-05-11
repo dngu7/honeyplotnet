@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------
-# Copyright (c) __________________________ 2022.
+# Copyright (c) __________________________ 2023.
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
@@ -362,7 +362,6 @@ class Decoder(Coder):
         for pidx, pred in zip(ind, cont_pred):
           all_predictions[pidx].append(pred)
 
-      if self.debug: print(f"4 head name: {head_name}   logs: {logs[head_name]} ")      
       logs[head_name] = torch.cat(logs[head_name], dim=0).view(-1).detach().cpu()
 
     # Stack all predictions. Each chart type has different dimension
@@ -389,8 +388,6 @@ class Decoder(Coder):
     bsz = hidden_row.size(0) 
     all_predictions = [None for _ in range(bsz)] 
 
-    if self.debug: print(f"decode_scale.hidden_row: {hidden_row.shape}")
-
     #Ensure all heads are used for torchrun
     for head_name, head in self.cont_decoder['scale'].items():
       if head_name not in chart_type_dict:
@@ -401,8 +398,6 @@ class Decoder(Coder):
     for head_name, ind in chart_type_dict.items():
 
       hid_row = hidden_row[ind, :, :]
-
-      if self.debug: print(f"decode_scale.hid_row: {head_name} {ind} {hid_row.shape}")
 
       if self.use_mhd and wta_idx is not None:
         hid_row = torch.flatten(hid_row, start_dim=0, end_dim=1)
@@ -416,8 +411,6 @@ class Decoder(Coder):
         scale_logit  = self.dim_wise_relu(scale_logit, head_name=head_name, decoder_name='scale')
 
         scale_logits   += [scale_logit]
-
-      if self.debug: print(f"decode_scale.scale_logits: {head_name} {ind} {scale_logits[0].shape}")
 
       #### Run mixture
       if self.scale_n_head > 1:
@@ -484,8 +477,6 @@ class Decoder(Coder):
           #Save metrics
           rec_error = F.mse_loss(scale_pred.detach(), label, reduction='none').detach()
           rec_error = rec_error.mean(-1)  * mask
-          if self.debug: print(f"decode_scale.reconstruction_error: {rec_error.shape}")
-          if self.debug: print(f"decode_scale.counts              : {counts.shape}")
 
           #### SWTA loss
           lt = torch.where(dist_loss < min_dist_loss, 1, 0)
@@ -511,12 +502,10 @@ class Decoder(Coder):
         #Save for logging
         mse_error = (min_rec_error.sum(-1) * counts)
         logs[head_name] = mse_error.detach().cpu()
-        if self.debug: print(f"5 scale.head_name: {head_name}   logs: {logs[head_name]} ")      
 
       #Cannot stack because last dimension can vary by chart type
       for idx, pred in zip(ind, best_scale_pred):
         all_predictions[idx] = pred
-    if self.debug: print(f"decode_scale.logs           :{logs}")    
     
     assert all(p is not None for p in all_predictions), "One of scale predictions not recorded."
     return all_predictions, total_loss, logs

@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------
-# Copyright (c) __________________________ 2022.
+# Copyright (c) __________________________ 2023.
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
@@ -123,8 +123,6 @@ class Encoder(Coder):
 
     loss = s_loss + c_loss
 
-    if self.debug: print(f"embedding shapes > scale: {scale_embd.shape}  cont: {cont_embd.shape}")
-    
     encoder_input = [scale_embd, cont_embd]
     encoder_mask  = [scale_mask, cont_mask]
 
@@ -151,9 +149,6 @@ class Encoder(Coder):
 
       encoder_input = torch.cat([encoder_input, inp_pad], dim=1)
       encoder_mask  = torch.cat([encoder_mask, mask_pad], dim=1)
-
-    if self.debug:
-      print("encoder input0: {} mask: {}".format(encoder_input.shape, encoder_mask.shape))
 
     return encoder_input, encoder_mask, loss
 
@@ -216,7 +211,6 @@ class Encoder(Coder):
       cont_embd = pad_vector(cont_embd, pad_len, pad_dim, self.device, self.dtype_float)
       cont_mask = pad_vector(cont_mask, pad_len, pad_dim, self.device, self.dtype_float)
     
-    if self.debug: print("2cont_embd: {}".format(cont_embd.shape))
     return  cont_embd, cont_mask, total_loss
 
 
@@ -236,10 +230,6 @@ class Encoder(Coder):
     for head_name, ind in chart_type_dict.items():
       scale_x     = torch.stack([v for idx, v in enumerate(inputs_embeds) if idx in ind], dim=0).to(self.device)
 
-      #if self.debug:
-        #print("preencode_scale [{}] input embeds: {}".format(head_name, scale_x.shape))
-        #print("preencode_scale [{}] values: {}".format(head_name, scale_x[0]))
-              
       scale_enc = self.cont_encoder['scale'][head_name](scale_x) 
       series_count = scale_enc.size(1)
 
@@ -262,6 +252,5 @@ class Encoder(Coder):
       scale_embd = pad_vector(scale_embd, pad_len, pad_dim, self.device, self.dtype_float)
       scale_mask = pad_vector(scale_mask, pad_len, pad_dim, self.device, self.dtype_float)
 
-    #if self.debug: print("scale_embd: {}".format(scale_embd.shape))
 
     return scale_embd, scale_mask, total_loss

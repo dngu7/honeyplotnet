@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------
-# Copyright (c) __________________________ 2022.
+# Copyright (c) __________________________ 2023.
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
@@ -35,8 +35,10 @@ def init_dataloader(cfg, mode, stage, models, tokenizers, return_dataset=False):
   if stage  == 'chart_text':
     dataset_cfg = data_cfg.dataset.chart_text
     model_cfg   = cfg.model.chart_text.hf_model
-  
-  elif stage in ['continuous','seq', 'generate']:
+  elif stage  in ['seq']:
+    dataset_cfg = {**data_cfg.dataset.chart_data, **data_cfg.dataset.caption}
+    model_cfg   = cfg.model.caption.hf_model
+  elif stage in ['continuous']:
     dataset_cfg = data_cfg.dataset.chart_data
     model_cfg   = cfg.model.chart_text.hf_model
   
@@ -110,7 +112,10 @@ def select_dataset(mode, stage, root, dataset_cfg, tokenizers, dataset_name='pmc
   train_data = pickle_open(train_path)
   val_data = pickle_open(val_path)
 
-  if stage == 'chart_text':
+  if mode == 'generate':
+    train_ds = PmcGenerateDataset(data=train_data, tokenizer1=tokenizers['seq'], **dataset_cfg)
+    val_ds   = PmcGenerateDataset(data=val_data, tokenizer1=tokenizers['seq'], **val_cfg)   
+  elif stage == 'chart_text':
     train_ds = PmcChartTextDataset(data=train_data, tokenizer1=tokenizers['chart_text'],**dataset_cfg)
     val_ds   = PmcChartTextDataset(data=val_data, tokenizer1=tokenizers['chart_text'], **val_cfg)
   elif stage == 'continuous':
@@ -119,9 +124,7 @@ def select_dataset(mode, stage, root, dataset_cfg, tokenizers, dataset_name='pmc
   elif stage == 'seq':
     train_ds = PmcSeqDataset(data=train_data, tokenizer=tokenizers['seq'], **dataset_cfg)
     val_ds   = PmcSeqDataset(data=val_data, tokenizer=tokenizers['seq'], **val_cfg)
-  elif stage == 'generate':
-    train_ds = PmcGenerateDataset(data=train_data, tokenizer1=tokenizers['chart_text'], **dataset_cfg)
-    val_ds   = PmcGenerateDataset(data=val_data, tokenizer1=tokenizers['chart_text'], **val_cfg)   
+
   else:
     raise NotImplementedError()
 

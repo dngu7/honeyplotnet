@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------
-# Copyright (c) __________________________ 2022.
+# Copyright (c) __________________________ 2023.
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
@@ -59,7 +59,6 @@ class ContinuousRunner(BaseRunner):
       total_loss += loss * weight
       loss_log[name] = loss.detach().cpu()
         
-    if self.debug: print(f"loss_log: {loss_log}")
 
     if self.use_torch_dist:
       total_loss = total_loss.mean() 

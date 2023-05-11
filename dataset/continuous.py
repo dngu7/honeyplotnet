@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------
-# Copyright (c) __________________________ 2022.
+# Copyright (c) __________________________ 2023.
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
@@ -214,21 +214,18 @@ class PmcContinuousDataset(object):
         
         series_keys = list(data.keys())
 
-        #if self.debug: print(f"chart type: {chart_type}  series idx: {series_idx} series key: {series_keys}")
         
         #ignore series that do not have 'x', 'y' or 'y2'
         if chart_type not in ['vertical box'] and \
             (('x' not in series_keys) or \
               ('y' not in series_keys and \
               'y2' not in series_keys)):
-          #if self.debug: print(f"failed series key test: chart type: {chart_type}  pt idx: {pt_idx} key: {series_keys}")
           continue
         
         #Replace y2 with y where possible
         y2_replacement_flag = False
         if 'y2' in series_keys and 'y' not in series_keys and 'x' in series_keys:
           y2_replacement_flag = True
-          #if self.debug: print(f"y2_replacement_flag active: chart type: {chart_type}  pt idx: {pt_idx} key: {series_keys}")
 
         pt_store = {}
 
@@ -250,7 +247,6 @@ class PmcContinuousDataset(object):
           
           #Store the data AND update max, min for each series
           elif isinstance(v, (float, int)):
-            #if self.debug: print(f"{k} {v}")
             
             # Assign keys to each grouping
             if k in ['y', 'y2', 'first_quartile', 'min', 'max', 'third_quartile', 'median']:
@@ -271,7 +267,6 @@ class PmcContinuousDataset(object):
           keys = list(pt_store.keys())
           assert True if 'y' in keys else 'y2' not in keys, "{}, {}, {}".format(series_keys, keys, y2_replacement_flag)
       
-        #if self.debug: print(f"finished obtaining scales: chart type: {chart_type}  pt idx: {pt_idx} key: {series_keys} \n--data: {data} \n--scales: {output['unnorm_scale']}")
       
 
       output['unnorm_series'].append(unnorm_series)
@@ -311,7 +306,6 @@ class PmcContinuousDataset(object):
           output['norm_scale'][s]['range'][ds_idx] = self.scale_mode(scale_range + self.scale_eps[1])
           output['norm_scale'][s]['range'][ds_idx] = max(output['norm_scale'][s]['range'][ds_idx], self.scale_floor[1])
 
-      #if self.debug: print(f"processing scales: chart type: {chart_type}  series_count: {series_count}  \n--unnormscale: {output['unnorm_scale']} \n--norm_scale: {output['norm_scale']} ")
 
       #Check if any is none. IF so then make it the average of the other scales
       for ds_idx in range(series_count):
@@ -363,7 +357,6 @@ class PmcContinuousDataset(object):
       if len(norm_series['data']):
         output['norm_series'].append(norm_series)
 
-      #if self.debug: print(f"normalizing data: chart type: {chart_type}   \n--unnorm_series: {output['unnorm_series']} \n--norm_series: {output['norm_series']} ")
 
     return output
 
@@ -639,13 +632,6 @@ class PmcContinuousDataset(object):
     inputs['labels']['col'] = inputs['node']['input_ids'][:,0,:]
     inputs['labels']['row'] = inputs['node']['input_ids'][:,:,0]
 
-    # if self.debug: print(f"chart type             : {batch_chart_type}")
-    # if self.debug: print(f"scale                  : {padded_batch_scale_tgt}")
-    # if self.debug: print(f"scale_mask             : {padded_batch_scale_mask}")
-    # if self.debug: print(f"continuous             : {padded_batch_reg_tgt}")
-    # if self.debug: print(f"continuous mask        : {continuous_mask}")
-    # if self.debug: print(f"node                   : {padded_batch_node_type}")
-    # if self.debug: print(f"node_mask              : {padded_batch_node_mask}")
-    # raise
+ 
 
     return inputs
