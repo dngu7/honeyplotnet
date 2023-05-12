@@ -24,7 +24,7 @@ def tmp_process_group(backend):
     finally:
         dist.destroy_process_group(cpu_pg)
 
-def load_checkpoint(state, ckpt_dirs, device_id, rank, distributed, use_deepspeed):
+def load_checkpoint(state, ckpt_dirs, device_id, rank, distributed):
     """
     Loads a local checkpoint (if any). Otherwise, checks to see if any of
     the neighbors have a non-zero state. If so, restore the state
@@ -45,7 +45,7 @@ def load_checkpoint(state, ckpt_dirs, device_id, rank, distributed, use_deepspee
     else:
         print("N[{}/{}] Checkpoint does not exist.".format(device_id, rank))
 
-    if not distributed or use_deepspeed:
+    if not distributed:
         return state
 
     # logic below is unnecessary when the checkpoint is visible on all nodes!
@@ -102,14 +102,8 @@ def load_checkpoint(state, ckpt_dirs, device_id, rank, distributed, use_deepspee
     return state
 
 
-def save_checkpoint(state, is_best=False, is_latest=False, ckpt_dirs=None, epoch=None, stage=None, use_deepspeed=False):
-
-    if not use_deepspeed:
-        _save_checkpoint(state, is_best, is_latest, ckpt_dirs, epoch, stage)
-    else:
-        tag = 'best' if is_best else None
-        state.deepspeed_save(ckpt_dirs, tag=tag, save_latest=True)
-
+def save_checkpoint(state, is_best=False, is_latest=False, ckpt_dirs=None, epoch=None, stage=None):
+    _save_checkpoint(state, is_best, is_latest, ckpt_dirs, epoch, stage)
 
 def _save_checkpoint(state, is_best=False, is_latest=False, save_dir=None, epoch=None, stage=None):
 

@@ -6,7 +6,6 @@ model:
       name: google/bigbird-pegasus-large-pubmed 
 torch_dist:
   use: true
-  deepspeed: true  
 train:
   intervals:
     eval: 100000

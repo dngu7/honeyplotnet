@@ -127,14 +127,12 @@ class SeqRunner(ChartTextRunner):
       total_loss += loss
       loss_log[name] = loss.detach().cpu()
     
-    if self.gradient_accum_steps > 1 and not self.use_deepspeed:
+    if self.gradient_accum_steps > 1:
       total_loss = total_loss / self.gradient_accum_steps
     
-    if self.do_grad_scaling and not self.use_deepspeed:
+    if self.do_grad_scaling:
       self.scaler.scale(total_loss).backward()
-    elif self.use_deepspeed:
 
-      models['seq'].backward(total_loss)
     else:
       total_loss.backward()
 
@@ -170,24 +168,18 @@ class SeqRunner(ChartTextRunner):
       
       self.tracker.add_logs(split='train', log=loss_log, total_loss=tr_loss_step)
 
-      if self.use_deepspeed:
-        models[self.stage].step()
-
       if (step + 1) % self.gradient_accum_steps == 0 or (
                     # last step in epoch but step is always smaller than gradient_accum_steps
                     steps_in_epoch <= self.gradient_accum_steps
                     and (step + 1) == steps_in_epoch
                 ):
         
-        if not self.use_deepspeed:
-          if self.do_grad_scaling:
-            self.scaler.unscale_(opts[self.stage])
-          if self.max_grad_norm > 0:
-            torch.nn.utils.clip_grad_norm_(models[self.stage].parameters(), self.max_grad_norm)
+        if self.do_grad_scaling:
+          self.scaler.unscale_(opts[self.stage])
+        if self.max_grad_norm > 0:
+          torch.nn.utils.clip_grad_norm_(models[self.stage].parameters(), self.max_grad_norm)
 
-        if self.use_deepspeed:
-          pass
-        elif self.do_grad_scaling:
+        if self.do_grad_scaling:
           self.scaler.step(opts[self.stage])
           self.scaler.update()
         else:

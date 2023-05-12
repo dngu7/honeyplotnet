@@ -6,8 +6,6 @@
 # ---------------------------------------------------------------
 
 
-import deepspeed
-
 import torch
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -33,101 +31,52 @@ from transformers.models.t5.modeling_t5 import T5Stack
 from torch.utils.data import DataLoader
 
 def init_model(cfg, mode, stage, device_id):
+  '''Initialize all models according to config file'''
   
   use_distributed = cfg.torch_dist.use
-  use_deepspeed   = cfg.torch_dist.deepspeed
   active_models   = cfg.model.active
-
-  if cfg.rank == 0:
-    print("Active models         : {}".format(active_models))
 
   models, toks, opts, schs, colls, loaders = {}, {}, {}, {}, {}, {}
   train_ds, val_ds = {},{}
 
-  if 'chart_text' in active_models or stage == 'chart_text':
-    models['chart_text'], toks['chart_text'], opts['chart_text'] = init_chart_text_model(cfg, device_id)
+  if cfg.eval.ksm.active:
+    models['ksm'], toks['ksm'] = init_ksm_model(cfg)
 
-    if cfg.eval.ksm.active:
-      models['ksm'], toks['ksm'] = init_ksm_model(cfg)
-
-  if 'continuous' in active_models or stage in ['continuous', 'seq']:
-    models['continuous'], opts['continuous'] = init_continuous_model(cfg)
-    
-    if cfg.model.continuous_data.disc.use:
-      models['disc'], opts['disc'] = init_disc_model(cfg, device_id)
+  models['continuous'], opts['continuous'] = init_continuous_model(cfg)
   
+  if cfg.model.continuous_data.disc.use:
+    models['disc'], opts['disc'] = init_disc_model(cfg, device_id)
+
   if 'seq' in active_models or stage == 'seq':
-    models['seq'], toks['seq'], opts['seq'] = init_seq_model(cfg, cfg.device_id, load_opt=True)
-  
+    models['seq'], toks['seq'], opts['seq'], schs['seq'] = init_seq_model(
+      cfg, cfg.device_id, load_opt=stage=='seq')
+    
+  #Prepare models for distributed training
   if use_distributed:
-    train_ds[stage], val_ds[stage], colls[stage] = init_dataloader(
-      cfg, mode, stage, models, toks, return_dataset=True)
-    print("building loader for train_ds", train_ds.keys(), colls.keys())
-
-    for _stage in models.keys():
-      print(f"Creating distributed model: {_stage}")
-      models[_stage], opts[_stage],\
-        loaders['train'], schs[_stage] = to_distributed(
-          model=models[_stage], 
+    train_ds[stage], loaders['val'], colls[stage] = init_dataloader(
+        cfg, mode, stage, models, toks, return_dataset=True)
+    
+    for s in models.keys():
+      models[s] = to_distributed(
           cfg=cfg, 
-          use_deepspeed=use_deepspeed, 
+          model=models[s], 
           device_id=device_id, 
-          opt=opts.get(_stage), 
-          dataset=train_ds.get(_stage), 
-          data_collator=colls.get(_stage), 
-          is_transformer=True if _stage == 'chart_text' else False
           )
-  elif device_id is not None:
-    for _stage in models.keys():
-      if models[_stage] is not None and device_id != 'cpu':
-        models[_stage].to('cuda:{}'.format(device_id))
 
-  ### Make loader for validation set
-  if use_deepspeed:
-    batch_size  =  cfg.batch_size
-    num_workers =  cfg.num_workers
-    print("building loader for val_ds", val_ds.keys(), colls.keys())
-
-    loaders['val'] = DataLoader(
-      val_ds[stage],
-      batch_size=batch_size,
-      shuffle=False,
-      num_workers=num_workers,
-      collate_fn=colls[stage],
-      pin_memory=True,
-      sampler=ElasticDistributedSampler(val_ds[stage])
-    )
+      if cfg.rank == 0: print(f"Creating distributed model: {s}")
+      
+  elif cfg.device_id not in [None, 'cpu']:
+    for s in models.keys():
+      if models[s] is not None and device_id != 'cpu':
+        models[s].to('cuda:{}'.format(device_id))
 
   return models, toks, opts, schs, loaders
 
-def to_distributed(model, cfg,  use_deepspeed, device_id, is_transformer=True, data_collator=None, opt=None, dataset=None):
-
-  if model is None:
-    return None, None, None, None
-
-  if device_id != 'cpu':
-    torch.cuda.set_device(device_id)
-    
-  params = list(filter(lambda p: p.requires_grad, model.parameters()))
-  scheduler = None
-
-  if use_deepspeed:
-    #assert opt is not None, "Deepspeed requires pre-init opt"
-    ds_config = create_ds_config(cfg)
-    model, opt, dataset, scheduler = deepspeed.initialize(
-      config=ds_config,
-      model=model,
-      model_parameters=params,
-      optimizer=opt,
-      training_data=dataset,
-      collate_fn=data_collator
-      )
-
-  else:
-    model.to(f'cuda:{device_id}')
-    model = DDP(model, device_ids=[device_id], find_unused_parameters=cfg.debug) #, device_ids=[device_id], output_device=device_id)
-    
-  return model, opt, dataset, scheduler
+def to_distributed(cfg, model, device_id):
+  if model is None: return None
+  model.to(f'cuda:{device_id}')
+  model = DDP(model, device_ids=[device_id], find_unused_parameters=cfg.debug) 
+  return model 
 
 def init_continuous_model(cfg):
 

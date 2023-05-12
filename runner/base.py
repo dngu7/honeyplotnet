@@ -64,12 +64,11 @@ class BaseRunner(object):
     self.scaler = None
     self.gradient_accum_steps = cfg.train.gradient_accum_steps
     self.max_grad_norm = cfg.train.max_grad_norm
-    self.use_deepspeed = self.cfg.torch_dist.deepspeed
 
     self.use_amp = False
     self.do_grad_scaling = False
 
-    if self.cfg.fp16.use and not self.use_deepspeed: 
+    if self.cfg.fp16.use: 
       self.use_amp = True
       self.amp_dtype = torch.float16 if self.cfg.fp16.use else torch.bfloat16
       self.do_grad_scaling = True

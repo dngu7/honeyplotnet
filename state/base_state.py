@@ -22,11 +22,10 @@ class State:
   current "state" of the worker. This object is mutable.
   """
 
-  def __init__(self, models, tokenizers, opts, schs, rank=0, use_deepspeed=False, mode='train', stage='caption'):
+  def __init__(self, models, tokenizers, opts, schs, rank=0, mode='train', stage='caption'):
     self.epoch = -1
     self.global_step = 0
     self.best_score = {'chart_text': 0.0, 'continuous': float('inf'), 'seq':float('inf')}
-    self.use_deepspeed = use_deepspeed
     self.models = models
     self.tokenizers = tokenizers
     self.opts = opts
@@ -149,12 +148,6 @@ class State:
         print("Failed to set random seed for torch")
         pass
 
-  def check_ds(self, ckpt_files):
-    for f in ckpt_files:
-      if f.endswith('zero_to_fp32.py'):
-        return True
-    return False
-
   def load(self, ckpt_dirs, device_id):
     
     for stage, ckpt_dir in ckpt_dirs.items():
@@ -174,16 +167,6 @@ class State:
           print("[stage={}] Loading zero2f32 ckpt: {}".format(stage, f))
           snapshot = torch.load(f, map_location=f"cuda:{device_id}")
           self.models[stage].load_state_dict(snapshot, strict=False)
-
-        elif self.check_ds(ckpt_files):
-
-          is_train = self.mode == 'train' and self.cur_stage == stage
-
-          load_point, client_sd = self.models.get(stage).load_checkpoint(
-            ckpt_dir, load_optimizer_states=is_train, load_lr_scheduler_states=is_train)
-          
-          if self.rank == 0:
-            print("[stage={}] Loaded deepspeed ckpt: {}".format(stage, load_point))
 
         elif len(torch_ckpts) > 0:
           f = torch_ckpts[-1]
@@ -205,54 +188,19 @@ class State:
         else:
           print("client_sd is None! state has not been updated")
   
-  def apply_snapshot_deepspeed(self, load_dir, device_id):
-    print("Loading checkpoint from", load_dir)
-    for m in self.snapshot_keys:
-      if self.models.get(m) is not None:
-        model_load_dir = os.path.join(load_dir, m)
 
-        is_train = self.mode == 'train'
-        _, client_sd = self.models.get(m).load_checkpoint(
-          model_load_dir, load_optimizer_states=is_train, load_lr_scheduler_states=is_train)
-
-        if client_sd is None:
-          print("client_sd is None! state has not been updated")
-        else:
-          self.set_rng(client_sd['rng'])
-          self.global_step = client_sd['global_step']
-          self.epoch = client_sd['epoch']
-          self.best_score = client_sd['best_score']
-          self.metrics = client_sd['metrics']
-
-  def save(self, ckpt_dirs, use_deepspeed, tag=None, save_latest=True):
+  def save(self, ckpt_dirs, tag=None):
 
     for stage, ckpt_dir in ckpt_dirs.items():
       if stage != self.cur_stage: continue
 
-      if use_deepspeed:
-        self.deepspeed_save(ckpt_dir, stage, tag=tag, save_latest=save_latest)
+      if tag is not None:
+        ckpt_fn = '{}_snapshot.pth'.format(tag)
       else:
-     
-        if tag is not None:
-          ckpt_fn = '{}_snapshot.pth'.format(tag)
-        else:
-          ckpt_fn = '{}_snapshot.pth'.format(self.global_step)
+        ckpt_fn = '{}_snapshot.pth'.format(self.global_step)
 
-        ckpt_path = os.path.join(ckpt_dir, ckpt_fn)
-        torch.save(self.capture_snapshot(stage), ckpt_path)
-
-  def deepspeed_save(self, save_dir, stage, tag=None, save_latest=True):
-
-    client_sd = {}
-    client_sd['rng'] = self.get_rng()
-    client_sd['global_step'] = self.global_step
-    client_sd['epoch'] = self.epoch
-    client_sd['best_score'] = self.best_score
-    client_sd['metrics'] = self.metrics
-
-    if self.models.get(stage) is not None:
-      self.models[stage].save_checkpoint(
-        save_dir, tag=tag, save_latest=save_latest, client_state=client_sd)
+      ckpt_path = os.path.join(ckpt_dir, ckpt_fn)
+      torch.save(self.capture_snapshot(stage), ckpt_path)
 
   def from_ddp_ckpt(self, ddp_snapshot):
     # Convert from ddp ckpt to nonddp model.

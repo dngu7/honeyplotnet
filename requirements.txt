@@ -22,5 +22,4 @@ cpufeature
 gensim
 nltk
 yake
-deepspeed
 wget

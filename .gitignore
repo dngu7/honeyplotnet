@@ -1,6 +1,9 @@
 /data
 /exp
 /.temp 
+/config/test.yaml
+
+TODOLIST.md
 
 # Editors
 .vscode/

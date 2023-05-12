@@ -15,7 +15,6 @@ SIM_PAIRS = [
     ('series_words', 'categorical_words')
 ]
 
-
 def yake_text(text_str, max_ngram_size=3, dedup_thres=0.9, num_kw=20):
     kw_extractor = yake.KeywordExtractor(
         n=max_ngram_size, dedupLim=dedup_thres, top=num_kw)

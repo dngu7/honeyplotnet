@@ -19,25 +19,13 @@ from datetime import timedelta
 
 def launch_dist_backend(dist_cfg, timeout=1800, debug=False):
   if dist_cfg.use:
-    if dist_cfg.fsdp and dist_cfg.deepspeed:
-      raise ValueError("Both deepspeed/fsdp flags cannot both be activated. Only pick one.")
-
-    if dist_cfg.deepspeed:
-      import deepspeed
-      deepspeed.init_distributed(
-        dist_backend=dist_cfg.backend, 
-        init_method=dist_cfg.init_method,
-        timeout=timedelta(seconds=timeout),
-        verbose=debug
-      )
-    else:
-      try:
+    try:
         dist.init_process_group(
-          backend=dist_cfg.backend, 
-          init_method=dist_cfg.init_method, 
-          timeout=timedelta(seconds=timeout)
-          )
-      except ValueError:
+            backend=dist_cfg.backend, 
+            init_method=dist_cfg.init_method, 
+            timeout=timedelta(seconds=timeout)
+            )
+    except ValueError:
         dist_cfg.use = False
         print("Initialising Pytorch Distributed failed. It might not be available - switching to non-distributed mode.")
 

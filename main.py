@@ -6,13 +6,16 @@
 # ---------------------------------------------------------------
 
 import os
+import yaml
 import click
+import time
 
 from state import State
 from dataset import init_dataloader 
 from runner import get_runners 
 from models import init_model, load_checkpoint 
 from fid import init_fid_model
+from ksm import init_ksm_model
 
 from utils import (
   load_cfg,
@@ -22,21 +25,20 @@ from utils import (
   setup_gpu_cfg, 
 )
 
-STAGES = ['caption', 'chart_text', 'continuous',  'seq', 'generate']
+STAGES = ['continuous', 'seq']
 
 @click.command()
-@click.option('--config_file','-c', default='default.yaml')
-@click.option('--mode','-m', default='train')
-@click.option('--stage','-s', default='caption')
-@click.option('--debug', '-bug', default=0)
-@click.option('--work','-w', default='home')
-@click.option('--dist', '-di', default=None)
-@click.option('--seed', '-se', default=0)
-@click.option('--local_rank', '-lr', default=None)
-def main(config_file, mode, stage, work, debug, dist, seed, local_rank):
+@click.option('--config_file','-c', default='default.yaml', help='Configuration files in config folder')
+@click.option('--mode','-m', default='train', help='Runner mode. Select from ["train","eval"]')
+@click.option('--stage','-s', default='continuous', help='Training stages. Select from ["continuous","seq"]')
+@click.option('--work','-w', default='home', help='Work environment')
+@click.option('--distributed', '-d', default=None, help='Deactivate Pytorch distributed package')
+@click.option('--debug', '-bug', default=0, help='Activates debug mode')
+@click.option('--local_rank', '-lr', default=None, help='For distributed.')
+def main(config_file, mode, stage, work, debug, distributed, local_rank):
 
   assert stage in STAGES
-  assert mode in ['train', 'eval','save']
+  assert mode in ['train','eval']
   
   if local_rank is not None:
     os.environ["LOCAL_RANK"] = str(local_rank)
@@ -47,6 +49,8 @@ def main(config_file, mode, stage, work, debug, dist, seed, local_rank):
   cfg_dir = os.path.join(cur_dir, 'config')
 
   cfg = load_cfg(config_file, cfg_dir)
+  set_seeds(cfg.seed)
+
   cfg.work_env = work
   cfg.cur_dir = cur_dir
   cfg.cur_stage = stage
@@ -69,23 +73,18 @@ def main(config_file, mode, stage, work, debug, dist, seed, local_rank):
     print(f"Data directory not specified in config.       Default: {cfg.data_path}")
 
   # Check active model list in config file.
-  if stage == 'generate':
-    cfg.model.active = ['caption','continuous','seq', 'chart_text']
-  elif stage not in cfg.model.active:
+  if stage not in cfg.model.active:
     cfg.model.active += [stage]
-    
+
+
+
+
   ##########################################
   # Replace config with command line options (if any)
 
-  if dist is not None:
-    cfg.torch_dist.use = True if dist == '1' else False
-    if dist == '0':
-      cfg.torch_dist.deepspeed = False
+  if distributed is not None:
+    cfg.torch_dist.use = True if distributed == '1' else False
 
-  if seed is not None:
-    cfg.seed = int(seed)
-
-  set_seeds(cfg.seed)
   if debug or cfg.debug:
     cfg = start_debug_mode(cfg)
 
@@ -99,23 +98,30 @@ def main(config_file, mode, stage, work, debug, dist, seed, local_rank):
   
   ###########################################
   # Setup directories
-  cfg.tb_dir = os.path.join(cfg._exp_dir, 'tensorboard')
-  os.makedirs(cfg.tb_dir, exist_ok=True)
-
   cfg.save_dir = os.path.join(cfg._exp_dir, cfg.exp_name)
   os.makedirs(cfg.save_dir, exist_ok=True)
 
-  cfg.cache_dir = os.path.join(cfg.data_path, 'cache')
-  os.makedirs(cfg.cache_dir, exist_ok=True)
-  os.environ['TRANSFORMERS_CACHE'] = cfg.cache_dir
+  #Save cfg into directory
+  cfg_fn = os.path.join(cfg.save_dir, f'config_{int(time.time())}.yaml')
+  with open(cfg_fn, 'w') as file:
+    yaml.dump(cfg, file)
 
-  cfg.ckpt_dir = os.path.join(cfg.save_dir, 'checkpoints')
-  os.makedirs(cfg.ckpt_dir, exist_ok=True)
   cfg.ckpt_dirs = {}
-
-  cfg.sample_dir =  os.path.join(cfg.save_dir, 'samples')
-  os.makedirs(cfg.sample_dir, exist_ok=True)
   cfg.sample_dirs = {}
+
+  #Creates new data directories
+  for dir_name, cfg_attr, cfg_base in [
+      ('ksm_stats','ksm_dir','data_path'), 
+      ('fid_stats', 'fid_dir','data_path'),
+      ('cache', 'cache_dir','data_path'),
+      ('tensorboard','tb_dir', '_exp_dir'), 
+      ('checkpoints', 'ckpt_dir','save_dir'),
+      ('samples', 'sample_dir','save_dir')
+      ]:
+    new_path = os.path.join(cfg[cfg_base], dir_name)
+    os.makedirs(new_path, exist_ok=True)
+    setattr(cfg, cfg_attr, new_path) 
+  os.environ['TRANSFORMERS_CACHE'] = cfg.cache_dir
 
   for s in STAGES:
     stage_ckpt_dir = os.path.join(cfg.ckpt_dir, s)
@@ -132,7 +138,6 @@ def main(config_file, mode, stage, work, debug, dist, seed, local_rank):
 
   if cfg.rank in ['cpu', 0]:
     print("Torch Distributed     : {}".format(cfg.torch_dist.use))
-    print("Deepspeed             : {}".format(cfg.torch_dist.deepspeed))    
     print("Stage                 : {}".format(stage))
     print("Mode                  : {}".format(mode))
     print("Experiment Dir        : {}".format(cfg.save_dir))
@@ -149,26 +154,30 @@ def main(config_file, mode, stage, work, debug, dist, seed, local_rank):
     train_loader = loaders['train']
     val_loader = loaders['val']
   else:
-    train_loader, val_loader = init_dataloader(
-          cfg, mode, stage, models, tokenizers)
+    train_loader, val_loader = init_dataloader(cfg, mode, stage, models, tokenizers)
 
-  state = State(models, tokenizers, opts, schs, rank=cfg.rank, use_deepspeed=cfg.torch_dist.deepspeed, mode=mode, stage=stage)
+  state = State(models, tokenizers, opts, schs, rank=cfg.rank, mode=mode, stage=stage)
+  
   state = load_checkpoint(
     state, 
     cfg.ckpt_dirs, 
     cfg.device_id, cfg.rank, 
-    cfg.torch_dist.use, 
-    cfg.torch_dist.deepspeed)
+    cfg.torch_dist.use)
   
   #Initialize pre-trained fid model
   fid_stats = None
   if cfg.eval.fid:
-    models['fid'], fid_stats = init_fid_model(cfg, device_id=cfg.device_id)
-
+    models['fid'], fid_stats = init_fid_model(cfg, load_path=cfg.fid_dir, device_id=cfg.device_id)
+  
+  ksm_stats = None
+  if cfg.eval.ksm.active:
+    models['ksm'], ksm_stats = init_ksm_model(cfg, load_path=cfg.ksm_dir, device_id=cfg.device_id)
+  
   runner = get_runners(cfg, stage)
   runner.global_step = state.global_step
   runner.metrics = state.metrics
   runner.fid_stats = fid_stats
+  runner.ksm_stats = ksm_stats
 
   eval_freq = cfg.train.intervals.eval
   start_epoch = state.epoch + 1
@@ -199,7 +208,7 @@ def main(config_file, mode, stage, work, debug, dist, seed, local_rank):
     state.global_step = runner.global_step
     state.metrics = runner.metrics
 
-    if cfg.torch_dist.use and not cfg.torch_dist.deepspeed:
+    if cfg.torch_dist.use:
       train_loader.batch_sampler.sampler.set_epoch(epoch)
 
     if stage == 'generate':
@@ -228,14 +237,13 @@ def main(config_file, mode, stage, work, debug, dist, seed, local_rank):
       state.scaler[stage] = runner.scaler
       state.schs[stage]   = runner.lr_scheduler
 
-
-    if mode == 'train' and (cfg.rank == 0 or cfg.torch_dist.deepspeed):
+    if mode == 'train' and cfg.rank == 0:
       if is_best:
         tag = 'best_{}'.format(round(epoch, -2))
-        state.save(ckpt_dirs=cfg.ckpt_dirs, use_deepspeed=cfg.torch_dist.deepspeed, tag=tag, save_latest=False)
+        state.save(ckpt_dirs=cfg.ckpt_dirs, tag=tag, save_latest=False)
       
       tag = 'last_{}'.format(round(epoch, -2))
-      state.save(ckpt_dirs=cfg.ckpt_dirs, use_deepspeed=cfg.torch_dist.deepspeed, tag=tag, save_latest=True)
+      state.save(ckpt_dirs=cfg.ckpt_dirs, tag=tag, save_latest=True)
   
 
 if __name__ == "__main__":

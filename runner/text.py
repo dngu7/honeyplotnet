@@ -130,13 +130,11 @@ class ChartTextRunner(BaseRunner):
     if self.use_torch_dist:
       loss = loss.mean() 
     
-    if self.gradient_accum_steps > 1 and not self.use_deepspeed:
+    if self.gradient_accum_steps > 1:
       loss = loss / self.gradient_accum_steps
     
     if self.do_grad_scaling:
       self.scaler.scale(loss).backward()
-    elif self.use_deepspeed:
-      model.backward(loss)
     else:
       loss.backward()
 
@@ -160,9 +158,6 @@ class ChartTextRunner(BaseRunner):
       
       tr_loss += tr_loss_step
 
-      # Optimizer step for deepspeed called each step
-      if self.use_deepspeed:
-        models[self.stage].step()
 
       if (step + 1) % self.gradient_accum_steps == 0 or (
                     # last step in epoch but step is always smaller than gradient_accum_steps
@@ -170,22 +165,16 @@ class ChartTextRunner(BaseRunner):
                     and (step + 1) == steps_in_epoch
                 ):
         
-        if not self.use_deepspeed:
-          if self.do_grad_scaling:
-            self.scaler.unscale_(opts[self.stage])
-          if self.max_grad_norm > 0:
-            torch.nn.utils.clip_grad_norm_(models[self.stage].parameters(), self.max_grad_norm)
+        if self.do_grad_scaling:
+          self.scaler.unscale_(opts[self.stage])
+        if self.max_grad_norm > 0:
+          torch.nn.utils.clip_grad_norm_(models[self.stage].parameters(), self.max_grad_norm)
 
-        if self.use_deepspeed:
-          pass
-        elif self.do_grad_scaling:
+        if self.do_grad_scaling:
           self.scaler.step(opts[self.stage])
           self.scaler.update()
         else:
           opts[self.stage].step()
-
-        # if optimizer_was_run and not self.use_deepspeed:
-        #   self.lr_scheduler.step()
 
         models[self.stage].zero_grad()
         opts[self.stage].zero_grad()

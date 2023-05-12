@@ -63,13 +63,11 @@ class ContinuousRunner(BaseRunner):
     if self.use_torch_dist:
       total_loss = total_loss.mean() 
     
-    if self.gradient_accum_steps > 1 and not self.use_deepspeed:
+    if self.gradient_accum_steps > 1:
       total_loss = total_loss / self.gradient_accum_steps
     
-    if self.do_grad_scaling and not self.use_deepspeed:
+    if self.do_grad_scaling:
       self.scaler.scale(total_loss).backward()
-    elif self.use_deepspeed:
-      models[opt_model].backward(total_loss)
     else:
       total_loss.backward()
 
@@ -103,25 +101,18 @@ class ContinuousRunner(BaseRunner):
         self.tracker.add_logs(split='train', log=loss_log, total_loss=tr_loss_step)
         self.tracker.add_metrics(split='train', metrics=metric_log, metric_name='continuous')
 
-        # Optimizer step for deepspeed called each step
-        if self.use_deepspeed:
-          models[opt_model].step()
-
         if (step + 1) % self.gradient_accum_steps == 0 or (
                       # last step in epoch but step is always smaller than gradient_accum_steps
                       steps_in_epoch <= self.gradient_accum_steps
                       and (step + 1) == steps_in_epoch
                   ):
           
-          if not self.use_deepspeed:
-            if self.do_grad_scaling:
-              self.scaler.unscale_(opts[opt_model])
-            if self.max_grad_norm > 0:
-              torch.nn.utils.clip_grad_norm_(models[opt_model].parameters(), self.max_grad_norm)
+          if self.do_grad_scaling:
+            self.scaler.unscale_(opts[opt_model])
+          if self.max_grad_norm > 0:
+            torch.nn.utils.clip_grad_norm_(models[opt_model].parameters(), self.max_grad_norm)
 
-          if self.use_deepspeed:
-            pass
-          elif self.do_grad_scaling:
+          if self.do_grad_scaling:
             self.scaler.step(opts[opt_model])
             self.scaler.update()
           else:

@@ -6,7 +6,6 @@ model:
       name: google/pegasus-pubmed 
 torch_dist:
   use: true
-  deepspeed: true  
 train:
   intervals:
     eval: 100000

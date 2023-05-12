@@ -5,13 +5,12 @@ num_workers: 8
 debug: false
 timeout: 3600
 exp_dir: 
-  home: 
+  home: ''
 gpu:
   use: true
 torch_dist:
   use: true
-  fsdp: false
-  deepspeed: false 
+  fsdp: false #REMOVE THIS
   amp: false
   gpus_per_model: 1
   backend: nccl
@@ -24,7 +23,7 @@ batch_size_per_gpu:
 data:
   name: pmc
   path: 
-    home: 
+    home: ''
   dataset:
     chart_text:
       tgt_token: <mask_1>
