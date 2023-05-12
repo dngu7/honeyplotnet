@@ -116,10 +116,8 @@ def _save_checkpoint(state, is_best=False, is_latest=False, save_dir=None, epoch
     torch.save(state.capture_snapshot(), tmp_filename)
     os.rename(tmp_filename, filename)
 
-    #print(f"=> saved checkpoint for epoch {state.epoch} at {filename}")
     if is_best:
 
         best_name = "model_best.pth.tar" if stage is None else "{}_model_best.pth.tar".format(stage)
         best = os.path.join(save_dir, best_name)
-        #print(f"=> best model found at epoch {state.epoch} saving to {best}")
         shutil.copyfile(filename, best)

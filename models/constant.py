@@ -9,6 +9,7 @@ CHART_TO_HEAD_MAP = {
 UNIQ_CHART = sorted(list(set(list(CHART_TO_HEAD_MAP.keys()))))
 UNIQ_CHART_HEADS = sorted(list(set(list(CHART_TO_HEAD_MAP.values()))))
 CHART_TO_HEAD_IDX = {m: UNIQ_CHART_HEADS.index(n) for m,n in CHART_TO_HEAD_MAP.items()}
+HEAD_IDX_TO_CHART = {n: m for m,n in CHART_TO_HEAD_IDX.items()}
 
 REG_DIMS = {
     'boxplot': 5,

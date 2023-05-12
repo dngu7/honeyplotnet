@@ -8,6 +8,7 @@
 import numpy as np
 import torch
 import random
+import re
 
 from .constants import TEXT_CUTOFF_POINTS
 
@@ -52,7 +53,6 @@ def get_text_window(all_text, context_start, tgt_token='[MASK1]', window_size=10
   start_idx = context_sent_idx - int(np.ceil(window_size / 2))
   end_idx = context_sent_idx + window_size // 2
   
-  #print(window_size, start_idx, end_idx)
   if start_idx < 0:
     end_idx -= start_idx
     start_idx = 0
@@ -63,7 +63,9 @@ def get_text_window(all_text, context_start, tgt_token='[MASK1]', window_size=10
   start_idx = max(start_idx, 0)
   end_idx = min(end_idx, len(sentence_split))
   
-  return '. '.join(sentence_split[start_idx:end_idx])
+  output = '. '.join(sentence_split[start_idx:end_idx])
+  output = re.sub(r'\[\d+\]', '', output)
+  return output
 
 def stack_dict(list_batch):
     collated_batch = {}
@@ -114,6 +116,13 @@ def shift_tokens_right(input_ids, pad_token_id, dim=-1):
     prev_output_tokens[:, 1:] = input_ids[:, :-1]
     return prev_output_tokens
   
+def shift_tokens_right_pad(input_ids, pad_token_id, dim=-1):
+    """Shift input ids one token to the right, and pad front."""
+    prev_output_tokens = input_ids.clone()
+    prev_output_tokens[:, 0] = pad_token_id
+    prev_output_tokens[:, 1:] = input_ids[:, :-1]
+    return prev_output_tokens
+
 class BaseDataset(torch.utils.data.Dataset):
   def __init__(self, tokenizer, window_size, widen_rate, max_widen_len, 
                min_sent_len, max_source_len, max_target_len, 

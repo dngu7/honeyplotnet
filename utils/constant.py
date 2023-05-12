@@ -38,3 +38,11 @@ CHART_TO_HEAD_MAP = {
     }
 
 UNIQ_CHART_HEADS = sorted(list(set(list(CHART_TO_HEAD_MAP.values()))))
+
+TASK2IDX = {
+    'data': 0, 
+    'caption': 1, 
+    'categorical': 2, 
+    'series_name': 3, 
+    'axis': 4
+    }

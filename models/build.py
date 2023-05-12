@@ -203,7 +203,7 @@ def init_continuous_model(cfg):
     'scale_loss_fn': cfg.model.continuous_data.loss_fn.scale,
     'fp16': use_fp16, 
     'debug': cfg.debug,
-    'device': 'cuda:{}'.format(cfg.device_id),
+    'device': f'cuda:{cfg.device_id}' if cfg.device_id != 'cpu' else 'cpu'
   }
 
   model = ContinuousModel(**data_model_kwargs)

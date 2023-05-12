@@ -70,8 +70,6 @@ class VectorQuantizer(torch.nn.Module):
     def get_code_indices(self, q_z):
         flattened_inputs = torch.reshape(q_z, [-1, self.embedding_dim])
 
-        #print("flattened_inputs", flattened_inputs.shape, self.embeddings.weight.shape)
-        
         similarity = torch.matmul(flattened_inputs, self.embeddings.weight.t())
 
         s1 = torch.sum(flattened_inputs ** 2, axis=1, keepdims=True)

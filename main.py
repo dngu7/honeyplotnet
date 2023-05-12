@@ -37,7 +37,7 @@ STAGES = ['continuous', 'seq']
 def main(config_file, mode, stage, work, debug, distributed, local_rank):
 
   assert stage in STAGES
-  assert mode in ['train','eval']
+  assert mode in ['train','eval','generate'], mode
   
   if local_rank is not None:
     os.environ["LOCAL_RANK"] = str(local_rank)
@@ -68,16 +68,16 @@ def main(config_file, mode, stage, work, debug, distributed, local_rank):
 
   ##########################################
   # Check experiment and data directory exist
-  if cfg._exp_dir is None:
+  if cfg._exp_dir in [None,'']:
     cfg._exp_dir = os.path.join(cur_dir, 'exp')
     os.makedirs(cfg._exp_dir, exist_ok=True)
     print(f"Experiment directory not specified in config. Default: {cfg._exp_dir}")
   
-  if cfg.data_path is None:
+  if cfg.data_path in [None,'']:
     cfg.data_path = os.path.join(cur_dir, 'data')
     os.makedirs(cfg.data_path, exist_ok=True)
     print(f"Data directory not specified in config.       Default: {cfg.data_path}")
-
+  
   # Check active model list in config file.
   if stage not in cfg.model.active:
     cfg.model.active += [stage]
@@ -114,7 +114,6 @@ def main(config_file, mode, stage, work, debug, distributed, local_rank):
 
   #Creates new data directories
   for dir_name, cfg_attr, cfg_base in [
-      ('ksm_stats','ksm_dir','data_path'), 
       ('fid_stats', 'fid_dir','data_path'),
       ('cache', 'cache_dir','data_path'),
       ('tensorboard','tb_dir', '_exp_dir'), 
@@ -158,7 +157,7 @@ def main(config_file, mode, stage, work, debug, distributed, local_rank):
   if cfg.eval.fid:
     models['fid'], fid_stats = init_fid_model(cfg, load_path=cfg.fid_dir, device_id=cfg.device_id)
   
-  runner = get_runners(cfg, stage)
+  runner = get_runners(cfg, stage, mode)
   runner.global_step = state.global_step
   runner.metrics = state.metrics
   runner.fid_stats = fid_stats
@@ -190,7 +189,7 @@ def main(config_file, mode, stage, work, debug, distributed, local_rank):
     else:
       raise
 
-  score_stage = stage + f'_{str(opt_mode)}' if 'seq' else stage
+  score_stage = stage + f'_{str(opt_mode)}' if stage == 'seq' else stage
   if score_stage not in state.best_score and stage == 'seq':
     state.best_score[score_stage] = 0.0 if score_stage == 'seq_1' else float('inf')
 
@@ -210,7 +209,9 @@ def main(config_file, mode, stage, work, debug, distributed, local_rank):
     runner.logger.info("model      : {}".format([name for name, m in models.items() if m is not None]))
     runner.logger.info("opt        : {}".format([name for name, m in opts.items() if m is not None]))
     runner.logger.info("tokenizers : {}".format([name for name, m in tokenizers.items() if m is not None]))
-    runner.logger.info("tasks      : {}".format(train_loader.dataset.tasks))
+
+    if hasattr(train_loader.dataset, 'tasks'):
+      runner.logger.info("tasks      : {}".format(train_loader.dataset.tasks))
 
   for epoch in range(start_epoch, total_epochs):
     is_best = False

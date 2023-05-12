@@ -54,7 +54,7 @@ class ChartTextRunner(BaseRunner):
     super(ChartTextRunner, self).__init__(cfg)
     self.stage = stage
 
-    self.ignore_pad_token_for_loss = self.cfg.model.caption.hf_model.ignore_pad_token_for_loss
+    self.ignore_pad_token_for_loss = self.cfg.model.seq.hf_model.ignore_pad_token_for_loss
     self.include_inputs_for_metrics = self.cfg.eval.include_inputs_for_metrics
     self.eval_accumulation_steps = self.cfg.eval.eval_accumulation_steps
 
@@ -121,8 +121,6 @@ class ChartTextRunner(BaseRunner):
   def training_step(self, model, inputs):
     model.train()
     inputs = self._prepare_inputs(inputs)
-
-    #print("training step: {}".format(inputs['labels']))
 
     with self.autocast_smart_context_manager():
       loss, outputs = self.compute_loss(model, inputs, return_outputs=True)

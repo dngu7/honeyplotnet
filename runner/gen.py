@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------
-# Copyright (c) Cyber Security Research Centre Limited 2022.
+# Copyright (c) _______ .
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
@@ -12,19 +12,13 @@ import numpy as np
 import torch
 from torch.nn import functional as F
 
-from vega import get_vega_template
-
 from transformers.trainer_pt_utils import (
   find_batch_size, 
   nested_concat, 
   nested_numpify,
 )
 
-from transformers import DataCollatorForSeq2Seq
-
 from .text import ChartTextRunner
-from dataset import PmcCaptionInferenceDataset
-from torch.utils.data import DataLoader, SequentialSampler
 
 from models.constant import UNIQ_CHART_HEADS
 
@@ -32,9 +26,6 @@ from models.constant import UNIQ_CHART_HEADS
 from utils import (
   TASK2PREPEND, 
   prepare_mpl,
-  create_bar_chart, 
-  create_line,
-  create_boxplot
 )
 
 
@@ -97,7 +88,7 @@ class GenRunner(ChartTextRunner):
 
   def tokenize(self, text, tokenizer):
       inputs = tokenizer(
-        text, max_length=self.cfg.model.caption.hf_model.max_source_len, 
+        text, max_length=self.cfg.model.seq.hf_model.max_source_len, 
           padding="max_length", truncation=True, return_tensors="pt")
       return inputs
   
@@ -300,12 +291,10 @@ class GenRunner(ChartTextRunner):
       if task not in ['context']:
         skip_special_tokens = True if task == 'caption' else False
         decoded[task] = self.batch_decode(tokens[task], tokenizer, skip_special_tokens=skip_special_tokens)
-        #print(f"detokenize >>> [{task}] >>>> tokens={len(tokens[task])}  >>>>> decoded={len(decoded[task])}")
       
     for task in decoded.keys():
       decoded[task] = [self.seperate_text_to_list(b, seperator=seperator) for b in decoded[task]]
     
-    #print("detokenized.decoded tasks: {}".format(decoded.keys()))
     return decoded
 
   def generate_codebook(self, data_tokens, models):
@@ -347,7 +336,6 @@ class GenRunner(ChartTextRunner):
             cb2  = cb2    - 2 - len(UNIQ_CHART_HEADS) #- self.cfg.model.continuous_data.vq.n_emb1
 
           ct_idxs.append(ct_idx)
-          #print(ct_idx.shape, cb_ind1.shape, cb_ind2.shape)
 
           samples = cont_module.reconstruct_from_indices(
             cb_ind1=cb_ind1, 
@@ -389,28 +377,6 @@ class GenRunner(ChartTextRunner):
 
     return container
 
-  def create_loader(self, gen_captions, model, tokenizer):
-
-    dataset = PmcCaptionInferenceDataset(
-      gen_captions, tokenizer, 
-      max_source_len=self.cfg.model.caption.hf_model.max_source_len)
-
-    data_collator = DataCollatorForSeq2Seq(
-          tokenizer,
-          model=model,
-          label_pad_token_id=-100,
-          pad_to_multiple_of=None,
-      )
-    
-    loader = DataLoader(
-        dataset,
-        batch_size=self.cfg.eval.batch_size,
-        num_workers=self.cfg.num_workers,
-        pin_memory=self.cfg.gpu.use,
-        collate_fn=data_collator,
-        sampler=SequentialSampler(dataset),
-    )
-    return loader
 
   def eval(self, eval_loader, models, tokenizers, **kwargs):
     
@@ -453,108 +419,6 @@ class GenRunner(ChartTextRunner):
       output_fn = os.path.join(save_dir,  f"{idx}.json")
       with open(output_fn, 'w') as f:
         json.dump(json_input, f)
-
-  def create_mpl_plots(self, x, text_data,save_dir):
-
-    if 'chart_data' in x:
-      x = x['chart_data']
-    
-    x_data_mpl = prepare_mpl(x)
-
-    for idx, x_data in enumerate(x_data_mpl):
-      f_name = os.path.join(save_dir, f"{idx}-{x_data['head_type']}.png")
-
-      text = {}
-      for k, v in text_data.items():
-        text[k] = v[idx]
-
-      #print("text", text)
-      if x_data['head_type'] == 'categorical':
-          create_bar_chart(x_data, text, f_name)
-      elif x_data['head_type'] == 'point':
-          create_line(x_data, text, f_name)
-      elif x_data['head_type'] == 'boxplot':
-          create_boxplot(x_data, text, f_name)
-      else:
-        raise ValueError(f"Invalid chart type given: {x_data['head_type']}")
-
-  def create_vega_json(self, chart_data, save_dir, idx):
-    ''' chart_data: ['chart_type','row','col','continuous' '''
-    chart_type = chart_data['chart_type']
-
-    assert chart_type in ['point', 'categorical','boxplot']
-    if chart_type == 'categorical':
-      json_file = self.build_categorical_json(chart_data)
-    elif chart_type == 'point':
-      json_file = self.build_point_json(chart_data)
-    else:
-      return
-    output_fn = os.path.join(save_dir,  f"{idx}_{chart_type}.json")
-    
-    with open(output_fn, 'w') as f:
-      json.dump(json_file, f)
-
-  def build_point_json(self,  chart_data):
-
-    chart_type = chart_data['chart_type']
-    continuous_data = chart_data['continuous']
-    json_file = get_vega_template(chart_type)
-
-    data = []
-    values = []
-    d = {"name": "table"}
-
-    cols = min(chart_data['col'], len(continuous_data[0]))
-    rows = min(chart_data['row'], len(continuous_data))
-
-    for cidx, row_idx in enumerate(range(rows)): #By series name
-      for col_idx in range(cols): #Right to left
-        v = {}
-        v['x'] = continuous_data[row_idx][col_idx][0]
-        v['y'] = continuous_data[row_idx][col_idx][1]
-        v['c'] = cidx
-        values.append(v)    
-    d['values'] = values #Add a list of dicts
-
-    data.append(d)
-    json_file['data'] = data
-    return json_file
-
-  def build_categorical_json(self,  chart_data):
-
-    chart_type = chart_data['chart_type']
-    continuous_data = chart_data['continuous']
-    discrete_text = chart_data['categorical']
-
-    json_file = get_vega_template(chart_type)
-
-    data = []
-    values = []
-    d = {"name": "table"}
-
-    cols = min(chart_data['col'], len(discrete_text), len(continuous_data[0]))
-    rows = min(chart_data['row'], len(continuous_data))
-    
-    text_idx = 0
-    for cidx, row_idx in enumerate(range(rows)): #By series name
-      for col_idx in range(cols): #Right to left
-        v = {}
-        v['x'] = discrete_text[col_idx]
-        v['y'] = continuous_data[row_idx][col_idx][0]
-        v['c'] = cidx
-
-        text_idx += 1
-        #Classes
-        if rows > 1:
-          v['c'] = cidx
-
-        values.append(v)
-
-    d['values'] = values 
-
-    data.append(d)
-    json_file['data'] = data
-    return json_file
 
   def sample_indices(self, logits, temp=1.0):
     bsz = logits.size(0)

@@ -268,7 +268,7 @@ class ContinuousRunner(BaseRunner):
           samples = models['continuous'].reconstruct_from_indices(
               ct_idx=ct_idx, cb_ind1=cb_ind1, cb_ind2=cb_ind2)
 
-      self.to_vega_json(samples, prefix=metric_key_prefix, step=step, epoch=epoch)
+      #self.to_vega_json(samples, prefix=metric_key_prefix, step=step, epoch=epoch)
 
     if self.use_torch_dist:
       dist.barrier()

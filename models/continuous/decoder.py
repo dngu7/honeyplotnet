@@ -337,8 +337,6 @@ class Decoder(Coder):
           pad_label = torch.zeros((label.size(0), pad_label_len, label.size(-1)), device=self.device, dtype=self.dtype_float)
           pad_mask  = torch.zeros((label.size(0), pad_label_len), device=self.device, dtype=self.dtype_float)
 
-          #print(head_name, "label", label.shape, label[:,:10])
-          #print(head_name, "mask", mask.sum(-1).sum(-1), mask[:,:10])
 
           label = torch.cat([label, pad_label], dim=1)
           mask = torch.cat([mask, pad_mask], dim=1)
@@ -402,7 +400,6 @@ class Decoder(Coder):
       if self.use_mhd and wta_idx is not None:
         hid_row = torch.flatten(hid_row, start_dim=0, end_dim=1)
 
-      #print("hid_row", hid_row.shape)
       #### Incorporate MCL decoder
       scale_logits = []
       for hidx in range(self.scale_n_head):

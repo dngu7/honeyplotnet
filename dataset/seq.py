@@ -25,7 +25,7 @@ class PmcSeqDataset(PmcTextDataset):
   def __init__(self, data, **kwargs):
     super().__init__(data, **kwargs)
 
-    self.tokenizer1 = kwargs['tokenizer1']
+    self.tokenizer = kwargs['tokenizer']
     self.seperate_data_task = kwargs['seperate_data_task']
     self.prepare_decoder_id_fn = kwargs['prepare_decoder_id_fn']
     self.pad_to_multiple_of = kwargs['pad_to_multiple_of']
@@ -116,12 +116,9 @@ class PmcSeqDataset(PmcTextDataset):
 
     #Randomly pick a task
     task_list = list(o for o in outputs.keys() if o in self.tasks)
-    #if not self.seperate_data_task:
-    #  _ = task_list.pop('data')
 
     if len(task_list) == 0:
-      print(f"tasks: {self.tasks}, outputs: {list(outputs.keys())}")
-      raise ValueError
+      raise ValueError(f"tasks: {self.tasks}, outputs: {list(outputs.keys())}")
     
     task = random.choice(task_list)
 
@@ -145,7 +142,7 @@ class PmcSeqDataset(PmcTextDataset):
       #Prepend task to caption
       context = TASK2PREPEND[task] + caption_label
 
-    text_inputs, _ = self._tokenize(self.tokenizer1, 
+    text_inputs, _ = self._tokenize(self.tokenizer, 
       context, max_source_len=self.max_source_len, 
       max_target_len=self.max_target_len, is_target=False)
     
@@ -181,7 +178,7 @@ class PmcSeqDataset(PmcTextDataset):
     return caption_str
 
   def tokenize(self, text, max_source_len=1024):
-    inputs = self.tokenizer1(
+    inputs = self.tokenizer(
       text, max_length=max_source_len, 
         padding="max_length", truncation=True, return_tensors="pt")
     return inputs
@@ -355,21 +352,18 @@ class PmcSeqDataset(PmcTextDataset):
         
         series_keys = list(data.keys())
 
-        #if self.debug: print(f"chart type: {chart_type}  series idx: {series_idx} series key: {series_keys}")
         
         #ignore series that do not have 'x', 'y' or 'y2'
         if chart_type not in ['vertical box'] and \
             (('x' not in series_keys) or \
               ('y' not in series_keys and \
               'y2' not in series_keys)):
-          #if self.debug: print(f"failed series key test: chart type: {chart_type}  pt idx: {pt_idx} key: {series_keys}")
           continue
         
         #Replace y2 with y where possible
         y2_replacement_flag = False
         if 'y2' in series_keys and 'y' not in series_keys and 'x' in series_keys:
           y2_replacement_flag = True
-          #if self.debug: print(f"y2_replacement_flag active: chart type: {chart_type}  pt idx: {pt_idx} key: {series_keys}")
 
         pt_store = {}
 
@@ -391,7 +385,6 @@ class PmcSeqDataset(PmcTextDataset):
           
           #Store the data AND update max, min for each series
           elif isinstance(v, (float, int)):
-            #if self.debug: print(f"{k} {v}")
             
             # Assign keys to each grouping
             if k in ['y', 'y2', 'first_quartile', 'min', 'max', 'third_quartile', 'median']:
@@ -417,9 +410,6 @@ class PmcSeqDataset(PmcTextDataset):
           keys = list(pt_store.keys())
           assert True if 'y' in keys else 'y2' not in keys, "{}, {}, {}".format(series_keys, keys, y2_replacement_flag)
       
-        #if self.debug: print(f"finished obtaining scales: chart type: {chart_type}  pt idx: {pt_idx} key: {series_keys} \n--data: {data} \n--scales: {output['unnorm_scale']}")
-      
-
       output['unnorm_series'].append(unnorm_series)
 
     ##########################################
@@ -456,8 +446,6 @@ class PmcSeqDataset(PmcTextDataset):
 
           output['norm_scale'][s]['range'][ds_idx] = self.scale_mode(scale_range + self.scale_eps[1])
           output['norm_scale'][s]['range'][ds_idx] = max(output['norm_scale'][s]['range'][ds_idx], self.scale_floor[1])
-
-      #if self.debug: print(f"processing scales: chart type: {chart_type}  series_count: {series_count}  \n--unnormscale: {output['unnorm_scale']} \n--norm_scale: {output['norm_scale']} ")
 
       #Check if any is none. IF so then make it the average of the other scales
       for ds_idx in range(series_count):
@@ -509,8 +497,6 @@ class PmcSeqDataset(PmcTextDataset):
       if len(norm_series['data']):
         output['norm_series'].append(norm_series)
 
-      #if self.debug: print(f"normalizing data: chart type: {chart_type}   \n--unnorm_series: {output['unnorm_series']} \n--norm_series: {output['norm_series']} ")
-
     return output
 
   def collate_data(self, batch_data):
@@ -551,10 +537,6 @@ class PmcSeqDataset(PmcTextDataset):
               scale_tensor =   torch.tensor([data['norm_scale'][s]['min'][s_idx], data['norm_scale'][s]['range'][s_idx]], dtype=torch.float32)
             elif self.norm_mode == 'offset':
               scale_tensor = torch.tensor([data['norm_scale'][s]['scale_mean'], data['norm_scale'][s]['scale_std']], dtype=torch.float32)
-
-            if not torch.isfinite(scale_tensor).any():
-              print("Scale tensor contains non finite data: {}".format(data))
-              raise
             
             scale_tgt += scale_tensor
 
@@ -568,9 +550,7 @@ class PmcSeqDataset(PmcTextDataset):
 
         if len(scale_tgt):
           scale_tgt =  torch.stack(scale_tgt, dim=-1).view(1, -1)
-          #print(scale_tgt.shape)
           series_scale_tgt += scale_tgt
-
         
         #TARGET 3: Sequence of points (node type)
         prev_pt = None
@@ -582,7 +562,6 @@ class PmcSeqDataset(PmcTextDataset):
             # Prediction: [min_val, first_to_min, median_to_first, third_to_median, max_to_third]
             # Prediction head must contain relu final layer
 
-            #print("ds", point)
             min_val        = point['min']
             first_to_min   = point['first_quartile'] - point['min']
             median_to_first  = point['median'] - point['first_quartile']
@@ -603,11 +582,8 @@ class PmcSeqDataset(PmcTextDataset):
               else:
                 reg_tgt = [point[k] - prev_pt[k] for k in ['x', 'y']]
             except:
-              #print("others", series['data'])
-              #print("error with number of points in line/scatter => ", data['norm_series'])
-              print(point.keys())
-              raise
-              continue
+              raise ValueError(point.keys())
+              
 
           else:
             raise NotImplementedError("Invalid chart given")
@@ -633,11 +609,6 @@ class PmcSeqDataset(PmcTextDataset):
 
         series_reg_tgt += [reg_targets]
         series_reg_mask += [reg_mask]
-
-        if sum(reg_mask) == 0:
-          print("reg_targets", reg_targets)
-          print("series['data']", series['data'])
-          raise
 
         #Ensure all are the same length
         cur_node_len = len(node_type)
@@ -737,7 +708,6 @@ class PmcSeqDataset(PmcTextDataset):
 
           pad_scale_mask = torch.zeros((pad_len), dtype=torch.int32)
           series_scale_mask = torch.cat([series_scale_mask, pad_scale_mask], dim=0)
-          #print("pad series_scale_tgt", series_scale_tgt.shape, series_scale_mask.shape)
 
       #Pad the text? Not needed if all text is the same. series name and categorical names
 

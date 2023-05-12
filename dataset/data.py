@@ -1,10 +1,3 @@
-# ---------------------------------------------------------------
-# Copyright (c) __________________________ 2023.
-#
-# This source code is licensed under the MIT license found in the
-# LICENSE file in the root directory of this source tree.
-# ---------------------------------------------------------------
-
 import math
 import torch
 import numpy as np
@@ -13,33 +6,45 @@ from utils import CHART_TYPE_MAP, PAD_IDX
 
 from .base import (
   BaseDataset, get_text_window,
-  stack_dict, shift_right_vec, 
+  stack_dict, stack_tensor_dict,
+  shift_right_vec, shift_tokens_right
 )
 
-
+'''
+ Offset_cont mode
+    predict == > [x0,x1] [x1-x0,x2-x1], [x2-x1,y2-y1] ...
+    scale   == > [mean(d1), std(d1), mean(d1), std(x1)] #Multi choice learners
+'''
 class PmcDataDataset(BaseDataset):
   def __init__(self, data, 
-                tokenizer1, 
-                active_tasks=None, 
+                tokenizer=None, 
+                chart_tasks=None, 
                 scale_mode='log10', 
-                scale_eps=1.00001, scale_floor=-1.0, window_size=16, widen_rate=0.0, max_widen_len=1, 
-                min_sent_len=10, max_source_len=1024, max_target_len=256, max_source_len2=8, max_target_len2=8, 
-                pad_to_max_len=True, ignore_pad_token_for_loss=True, norm_mode='minmax', chart_text_input=None, 
-                chart_text_output=['categorical'], sep_token='<SEP>', **kwargs):
-    super().__init__(tokenizer1, window_size, widen_rate, max_widen_len, 
+                scale_eps=1.00001, 
+                scale_floor=-1.0, 
+                window_size=16, widen_rate=0.0, max_widen_len=1, 
+                min_sent_len=10, max_source_len=1024, max_target_len=256, 
+                max_source_len2=8, max_target_len2=8, 
+                pad_to_max_len=True, ignore_pad_token_for_loss=True, 
+                norm_mode='minmax', discrete_input=None, 
+                tasks=['categorical','series_name','axis','caption','data'], 
+                sep_token='<SEP>', **kwargs):
+    super().__init__(tokenizer, window_size, widen_rate, max_widen_len, 
                min_sent_len, max_source_len, max_target_len, pad_to_max_len, 
                ignore_pad_token_for_loss)
 
     # Filter the pmc dataset for certain tasks or charts
-    self.active_tasks = ['task6'] if active_tasks is None else active_tasks
+    self.chart_tasks = ['task6'] if chart_tasks is None else chart_tasks
     self.active_charts = [] 
 
+    self.tokenizer = tokenizer 
     self.max_source_len2 = max_source_len if max_source_len2 is None else max_source_len2
     self.max_target_len2 = max_target_len if max_target_len2 is None else max_target_len2
 
-    self.chart_text_input = chart_text_input
+    self.discrete_input = discrete_input
     self.sep_token = sep_token
-    self.chart_text_output = chart_text_output
+    self.tasks = tasks
+    self._data = data
 
     self.data = self.filter_data(data)
     
@@ -58,9 +63,9 @@ class PmcDataDataset(BaseDataset):
     
   def filter_data(self, data):
     task_req = []
-    if isinstance(self.active_tasks, list):
-      assert 'task6' in self.active_tasks
-      task_req = self.active_tasks
+    if isinstance(self.chart_tasks, list):
+      assert 'task6' in self.chart_tasks
+      task_req = self.chart_tasks
       data = [d for d in data if all(t in d and d[t] != None for t in task_req)]
 
     if len(self.active_charts):
@@ -109,9 +114,9 @@ class PmcDataDataset(BaseDataset):
       # Prepare inputs
       ######################
       input_text = ''
-      if 'captions' in self.chart_text_input:
+      if 'captions' in self.discrete_input:
         input_text += caption_label
-      if 'context' in self.chart_text_input:
+      if 'context' in self.discrete_input:
         input_text += context
       
       outputs = {}
@@ -123,7 +128,6 @@ class PmcDataDataset(BaseDataset):
           max_target_len=self.max_target_len, is_target=False)
         outputs['context'] = context_inputs
 
-      
       outputs['chart_type'] = self.get_chart_type(d)
       outputs['chart_data'] = self.preprocess_data_series(d)
       
@@ -273,9 +277,6 @@ class PmcDataDataset(BaseDataset):
       for s in list(output['unnorm_scale'].keys()):
         all_data = np.array(output['unnorm_scale'][s]['all'])
         if len(all_data):
-          #if chart_type not in ['vertical box']:
-          #print(s, list(output['unnorm_scale'].keys()), "all_data", all_data)
-          #d_start = all_data[0]
           d_mean  = np.mean(all_data)
           d_std   = np.std(all_data)
 
@@ -285,17 +286,12 @@ class PmcDataDataset(BaseDataset):
           scale_mean = self.scale_mode(d_mean + self.scale_eps[0])
           scale_std  = self.scale_mode(d_std + self.scale_eps[1])
 
-          if not np.isfinite(all_data).any():
-            print("Data contains non finite: {}".format(all_data))
-            raise
-
           output['norm_scale'][s] = {
             'mean': d_mean, 
             'std': d_std,
             'scale_mean': scale_mean,
             'scale_std': scale_std,
           }
-          #print("output['norm_scale'][s]", output['norm_scale'][s])
 
     elif self.norm_mode == 'minmax':
       for s in ['y', 'x']:
@@ -415,7 +411,7 @@ class PmcDataDataset(BaseDataset):
             txt_raw = collector
     
         txt_inputs, txt_labels = self._tokenize(
-          self.tokenizer1, txt_raw, 
+          self.tokenizer, txt_raw, 
           max_source_len=self.max_source_len2, 
           max_target_len=self.max_target_len2, 
           is_target=True, shift_right=True)
@@ -443,11 +439,11 @@ class PmcDataDataset(BaseDataset):
     for lbl in label:
       pad_len = max(col_counts) - lbl.size(0)
       if pad_len > 0:
-        pad = torch.ones((pad_len, max_token_len), dtype=torch.int32) * self.tokenizer1.pad_token_id
+        pad = torch.ones((pad_len, max_token_len), dtype=torch.int32) * self.tokenizer.pad_token_id
         lbl = torch.cat([lbl, pad], dim=0)
       padded_labels.append(lbl)
     label = torch.stack(padded_labels, dim=0)
-    label[label == self.tokenizer1.pad_token_id] = PAD_IDX
+    label[label == self.tokenizer.pad_token_id] = PAD_IDX
     all_txt_labels['input_ids'] = label
 
     return all_txt_inputs, all_txt_labels
@@ -502,10 +498,6 @@ class PmcDataDataset(BaseDataset):
             elif self.norm_mode == 'offset':
               scale_tensor = torch.tensor([data['norm_scale'][s]['scale_mean'], data['norm_scale'][s]['scale_std']], dtype=torch.float32)
 
-            if not torch.isfinite(scale_tensor).any():
-              print("Scale tensor contains non finite data: {}".format(data))
-              raise
-            
             scale_tgt += scale_tensor
 
             if None in scale_tgt:
@@ -518,7 +510,6 @@ class PmcDataDataset(BaseDataset):
 
         if len(scale_tgt):
           scale_tgt =  torch.stack(scale_tgt, dim=-1).view(1, -1)
-          #print(scale_tgt.shape)
           series_scale_tgt += scale_tgt
 
         #TARGET 2: Series name = 'asdf'
@@ -553,23 +544,16 @@ class PmcDataDataset(BaseDataset):
               reg_tgt = [point[k] - prev_pt[k] for k in ['y']]
 
           elif data['chart_type'] in ['line', 'scatter']: 
-            try:
-              if pidx == 0 or self.norm_mode == 'minmax':
-                reg_tgt = [point[k] for k in ['x', 'y']]
-              else:
-                reg_tgt = [point[k] - prev_pt[k] for k in ['x', 'y']]
-            except:
-              #print("others", series['data'])
-              #print("error with number of points in line/scatter => ", data['norm_series'])
-              print(point.keys())
-              raise
-              continue
+            if pidx == 0 or self.norm_mode == 'minmax':
+              reg_tgt = [point[k] for k in ['x', 'y']]
+            else:
+              reg_tgt = [point[k] - prev_pt[k] for k in ['x', 'y']]
+
 
           else:
             raise NotImplementedError("Invalid chart given")
           
           #save for offsetting
-          #print("point", point, prev_pt, reg_tgt)
           prev_pt = point
 
           node_type.append(self.node_map['point'])
@@ -603,11 +587,6 @@ class PmcDataDataset(BaseDataset):
         series_reg_tgt += [reg_targets]
         series_reg_mask += [reg_mask]
 
-        if sum(reg_mask) == 0:
-          print("reg_targets", reg_targets)
-          print("series['data']", series['data'])
-          raise
-
         series_txt_tgt += [txt_tgt]
         series_txt_mask += [txt_mask]
 
@@ -634,12 +613,6 @@ class PmcDataDataset(BaseDataset):
         batch_scale_tgt += [torch.stack(series_scale_tgt, dim=0)]
       elif self.norm_mode == 'offset':
         batch_scale_tgt += [series_scale_tgt[0]]
-
-
-
-    # print("batch_scale_tgt")
-    # for p in batch_scale_tgt:
-    #   print(p.shape)
 
     padded_batch_node_type = []
     padded_batch_node_mask = []
@@ -703,11 +676,6 @@ class PmcDataDataset(BaseDataset):
       pad_node_len = max(len(p) for p in padded_series_node_type)
       reg_len = len(padded_series_reg_tgt[0][0])
 
-      #print("padded_series_node_type", len(padded_series_node_type))
-      #asdf = [len(p) for p in padded_series_node_type]
-      #print("asdf'", asdf)
-
-      #padded_series_txt_mask = torch.tensor(padded_series_txt_mask, dtype=torch.long)
       padded_series_reg_mask = torch.tensor(padded_series_reg_mask, dtype=torch.int32)
       padded_series_node_mask = torch.tensor(padded_series_node_mask, dtype=torch.int32)
 
@@ -720,11 +688,8 @@ class PmcDataDataset(BaseDataset):
 
       if pad_series_len > 0 and pad_node_len > 0:
         pad_mask = torch.zeros((pad_series_len, pad_node_len), dtype=torch.long)
-        #print("pad_mask", pad_mask.shape)
-        #padded_series_txt_mask = torch.cat([padded_series_txt_mask, pad_mask], dim=1)
         padded_series_reg_mask = torch.cat([padded_series_reg_mask, pad_mask], dim=0)
         padded_series_node_mask = torch.cat([padded_series_node_mask, pad_mask], dim=0)
-        #print("padded_series_reg_mask", padded_series_reg_mask.shape)
 
       #####################################
       # SCALE PADDING
@@ -741,9 +706,6 @@ class PmcDataDataset(BaseDataset):
 
           pad_scale_mask = torch.zeros((pad_len), dtype=torch.int32)
           series_scale_mask = torch.cat([series_scale_mask, pad_scale_mask], dim=0)
-          #print("pad series_scale_tgt", series_scale_tgt.shape, series_scale_mask.shape)
-
-      #Pad the text? Not needed if all text is the same. series name and categorical names
 
       padded_series_reg_tgt = torch.tensor(padded_series_reg_tgt, dtype=torch.float32)
 
@@ -752,19 +714,15 @@ class PmcDataDataset(BaseDataset):
       padded_batch_reg_tgt += [padded_series_reg_tgt]
       padded_batch_reg_mask += [padded_series_reg_mask]
       padded_batch_txt_tgt += [padded_series_txt_tgt]
-      #padded_batch_txt_mask += [padded_series_txt_mask]
 
       padded_batch_scale_tgt += [series_scale_tgt]
       padded_batch_scale_mask += [series_scale_mask]
     
     #Shift right all sequence to sequence problems (text, name)
-    #print(padded_batch_txt_tgt)
     
     if self.tokenizer is not None:
       txt_inputs, txt_labels = self.tokenize_text_batch(padded_batch_txt_tgt)
       name_inputs, name_labels = self.tokenize_text_batch(batch_name_targets, depth=2)
-    #for k in list(name_inputs.keys()):
-    #  name_inputs[k] = torch.stack(name_inputs[k], dim=0)
       
     #Stack non sequence problems
     inputs = {}
@@ -785,13 +743,12 @@ class PmcDataDataset(BaseDataset):
     attn_mask = torch.stack(padded_batch_reg_mask, dim=0)
     assert attn_mask.sum() > 0, "must be atleast reg :{}".format(attn_mask)
 
-    #print("dataloader >>> attn_mask", attn_mask.shape, attn_mask[:,:10])
     inputs['continuous']['attention_mask']  = attn_mask
 
     inputs['continuous']['decoder_inputs_embeds'] = [shift_right_vec(inp, start_values=0.0) for inp in inputs['continuous']['inputs_embeds']]
     inputs['continuous']['decoder_attention_mask']  = [shift_right_vec(inp, start_values=0.0) for inp in inputs['continuous']['attention_mask']]
 
-    #### chart_text data
+    #### Discrete data
     if self.tokenizer is not None:
       inputs['categorical'] = txt_inputs
       inputs['categorical']['label'] = txt_labels

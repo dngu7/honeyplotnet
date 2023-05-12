@@ -31,7 +31,7 @@ def init_dataloader(cfg, mode, stage, models, tokenizers, return_dataset=False):
   #Obtain dataset and model configurations here
   if mode in ['generate']:
     dataset_cfg = data_cfg.dataset.chart_data
-    model_cfg   = cfg.model.discrete_data.hf_model
+    model_cfg   = cfg.model.seq.hf_model
 
   elif stage in ['continuous']:
     dataset_cfg = data_cfg.dataset.chart_data
@@ -40,7 +40,7 @@ def init_dataloader(cfg, mode, stage, models, tokenizers, return_dataset=False):
       dataset_cfg['fid_mode'] = True
 
   elif stage  in ['seq']:
-    dataset_cfg = {**data_cfg.dataset.chart_data, **data_cfg.dataset.caption}
+    dataset_cfg = {**data_cfg.dataset.chart_data, **data_cfg.dataset.chart_text}
     label_pad_token_id = -100 if dataset_cfg.get('ignore_pad_token_for_loss') else tokenizers[stage].pad_token_id
     dataset_cfg['tasks'] = data_cfg.dataset.tasks
     dataset_cfg['seperate_data_task'] = cfg.model.seperate_data_task
@@ -53,7 +53,7 @@ def init_dataloader(cfg, mode, stage, models, tokenizers, return_dataset=False):
         models['seq'].prepare_decoder_input_ids_from_labels
     
     dataset_cfg['prepare_decoder_id_fn'] = decoder_fn
-    model_cfg   = cfg.model.caption.hf_model
+    model_cfg   = cfg.model.seq.hf_model
   
   else:
     raise ValueError("Dataset requested unavailable")
@@ -130,7 +130,7 @@ def select_dataset(mode, stage, root, dataset_cfg, tokenizers, dataset_name='pmc
   return train_ds, val_ds
 
 def download_dataset(path):
-  S3_BUCKET = 'https://s3.ap-southeast-2.amazonaws.com/decoychart/chartfid/'
+  S3_BUCKET = 'https://s3.ap-southeast-2.amazonaws.com/decoychart/data/'
   assert os.path.exists(path), path
   snapshot_names = ['pmc_data_train.pkl', 'pmc_data_test.pkl']
   for snapshot_name in snapshot_names:

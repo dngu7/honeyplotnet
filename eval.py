@@ -29,7 +29,7 @@ from utils import (
 @click.option('--distributed', '-d', default=None, help='Deactivate Pytorch distributed package')
 @click.option('--debug', '-bug', default=0, help='Activates debug mode')
 @click.option('--local_rank', '-lr', default=None, help='For distributed.')
-def main(config_file, stage, work, debug, dist, seed, local_rank):
+def main(config_file, work, debug, distributed, local_rank):
   stage = 'seq'
   mode = 'eval'
   
@@ -74,13 +74,13 @@ def main(config_file, stage, work, debug, dist, seed, local_rank):
   ##########################################
   # Replace config with command line options (if any)
 
-  if dist is not None:
-    cfg.torch_dist.use = True if dist == '1' else False
+  if distributed is not None:
+    cfg.torch_dist.use = True if distributed == '1' else False
 
   if debug or cfg.debug:
     cfg = start_debug_mode(cfg)
 
-  if cfg.gpu.use:
+  if cfg.use_gpu:
     launch_dist_backend(cfg.torch_dist, debug=cfg.debug, timeout=cfg.timeout)
 
   if cfg.exp_name is None:
@@ -93,17 +93,11 @@ def main(config_file, stage, work, debug, dist, seed, local_rank):
   cfg.save_dir = os.path.join(cfg._exp_dir, cfg.exp_name)
   os.makedirs(cfg.save_dir, exist_ok=True)
 
-  #Save cfg into directory
-  cfg_fn = os.path.join(cfg.save_dir, f'config_{int(time.time())}.yaml')
-  with open(cfg_fn, 'w') as file:
-    yaml.dump(cfg, file)
-
   cfg.ckpt_dirs = {}
   cfg.sample_dirs = {}
 
   #Creates new data directories
   for dir_name, cfg_attr, cfg_base in [
-      ('ksm_stats','ksm_dir','data_path'), 
       ('fid_stats', 'fid_dir','data_path'),
       ('cache', 'cache_dir','data_path'),
       ('tensorboard','tb_dir', '_exp_dir'), 
@@ -180,13 +174,10 @@ def main(config_file, stage, work, debug, dist, seed, local_rank):
 
   for tasks in ['caption', 'categorical','series_name','axis', 'data']: 
     cfg.data.dataset.tasks = [tasks]
+    runner.cfg.eval.fid = tasks == 'data'
+    
     _, val_loader = init_dataloader(cfg, mode, stage, models, tokenizers, return_dataset=False)
     
-    if tasks == 'data':
-      runner.cfg.eval.fid = True
-    else:
-      runner.cfg.eval.fid = False
-
     if cfg.rank in ['cpu', 0]:
       runner.logger.info(f"E{epoch} Tasks: {val_loader.dataset.tasks}")
       

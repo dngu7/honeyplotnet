@@ -10,8 +10,8 @@ from .text import ChartTextRunner
 from .continuous import ContinuousRunner
 from .seq import SeqRunner
 
-def get_runners(cfg, stage):
-  if stage == 'generate':
+def get_runners(cfg, stage, mode):
+  if mode == 'generate':
     runner = GenRunner
   elif stage == 'continuous':
     runner = ContinuousRunner

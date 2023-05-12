@@ -1,20 +1,27 @@
-# PyTorch Implementation of "HoneyChart"
+# PyTorch Implementation of "HoneyChart Model"
 
-HoneyChart is a collection of machine learning models that generate realistic and semantically consistent honey charts for honeyfiles.
-HCA achieves high semantic consistency by structuring conditional prediction pathways from the surrounding document text, to the captions and then to the underlying chart data.
-HCA reduces computational requirements by utilizing multi-task learning and a novel multi-head design that learns multiple chart formats simultaneously.
+HoneyChart Model is a deep learning architecture that generates realistic and semantically consistent charts for honeyfiles.
+Our approach is to train a multimodal Transformer language model and multi-head vector quantization autoencoder to generate different components of a honeychart based on the local document text and  caption.
 
-### Requirements
-This codebase was built using Python 3.7 (CUDA 11.6), PyTorch 1.12.0, Torchvision 0.13.0. Use the following script to build a virtual env and install required packages.
+### Software Requirements
+
+This codebase was built using Python 3.7 and PyTorch 1.12.1. Use the following script to build a virtual env and install required packages.
 
 ```
-python3.7 -m venv $HOME/envs/dcg
-source $HOME/envs/dcg/bin/activate
+python3.7 -m venv $HOME/envs/honeycharts
+source $HOME/envs/honeycharts/bin/activate
 pip install -U pip
 
-pip install torch==1.12.0 torchvision==0.13.0 --extra-index-url https://download.pytorch.org/whl/cu116
+# See https://pytorch.org/get-started/previous-versions/ 
+pip install torch==1.12.1+cu116 torchvision==0.13.1+cu116 torchaudio==0.12.1 --extra-index-url https://download.pytorch.org/whl/cu116
+
 pip install -r requirements.txt
 ```
+
+### Hardware Requirements
+Training was conducted using a single A100 node with 4 GPUs (80GB). Each of the three stages required approximately 8-12 hours.
+
+The trained weights for HCM-MVQGAN-T5 can be downloaded using`python download_weights.py`.
 
 ### Setup
 
@@ -25,14 +32,13 @@ In /config/default.yaml, ensure that
 
 All other configurations inherit properties from default.yaml.
 
+
 #### Datasets
 The dataset combines charts and captions from PubMedCentral. The chart data was originally from the ICPR 2020 chart detection competition.
-* Download - [link](https://decoychart.s3.ap-southeast-2.amazonaws.com/document-chart-dataset.zip)
+This is automatically downloaded from a S3 bucket during training. It will be saved in your "data.path.home" config path.
 
-This is automatically downloaded from a S3 bucket.
-
-### Training and evaluation 
-The entry point is main.py which requires specification of mode=['train','eval'],  stage=['chart_text','continuous','seq', 'generate']. 
+### Training 
+The entry point is main.py which requires specification of mode=['train','eval','generate],  stage=['continuous','seq']. 
 
 The following command works for a single GPU. 
 ```
@@ -43,14 +49,22 @@ The codebase is built using Pytorch Distributed Package.
 Depending on your setup, the following is suitable for multiple GPUs:
 
 ```
-srun torchrun --nnodes=<NNODES> \
+torchrun --nnodes=<NNODES> \
     --nproc_per_node=<TASKS_PER_NODE> \
     --max_restarts=3 \
     --rdzv_id=<ID> \
     --rdzv_backend=c10d \
     --rdzv_endpoint=$MASTER_ADDR \
-    main.py -c <CONFIG> -s <STAGE> -d <DATASET>
+    main.py -c <CONFIG> -s <STAGE> -m <MODE>
 ```
+
+### Evaluation
+
+Once training is complete, you can conduct evaluation across all tasks in one run using eval.py.
+```
+python eval.py -c <CONFIG> 
+``` 
+Use the config file *mvqgan_t5.yaml* to replicate results in paper.
 
 See official guide on [Pytorch Distributed](https://pytorch.org/docs/stable/distributed.html) for more information.
 

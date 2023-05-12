@@ -79,7 +79,6 @@ class Encoder(Coder):
     
     ### Input through transformer (t5 or gpt)
     if self.enc_tf is not None:
-      #print("encoder_input", encoder_input.shape)
       encoder_output = self.enc_tf(encoder_input)
 
     ### Downsample encoder inputs
@@ -160,8 +159,6 @@ class Encoder(Coder):
     cont_mask = attention_mask.to(self.device)
     bsz, row_len, col_len = cont_mask.shape
 
-    #print("cont_mask", cont_mask.shape)
-
     #Declare continuous embeddings
     cont_embd = torch.zeros((bsz, row_len, col_len, self.out_dim), dtype=self.dtype_float, device=self.device)
 
@@ -226,7 +223,6 @@ class Encoder(Coder):
     emb_len = min(scale_mask.size(1), self.max_series_blocks)
     scale_embd = torch.zeros((bsz, emb_len, self.out_dim), dtype=self.dtype_float, device=self.device)
 
-    #print("chart_type_dict", chart_type_dict)
     for head_name, ind in chart_type_dict.items():
       scale_x     = torch.stack([v for idx, v in enumerate(inputs_embeds) if idx in ind], dim=0).to(self.device)
 

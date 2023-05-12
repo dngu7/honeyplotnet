@@ -66,7 +66,6 @@ class ResultTracker(object):
             string = 'M: '
 
         for n in sorted(list(set(self.metric_names))):
-            #   print("metric_str", n, self.get_len(interval, n))
             if self.get_len(interval, n) and n.startswith('metric'):
                 ref_list = n.split('/')
                 m_name = None
@@ -74,9 +73,10 @@ class ResultTracker(object):
                     if ct_name in n:
                         ct_name = ref_list[-1]
                         m_name  = ref_list[-2]
-                elif stage in ['caption','chart_text']:
+                elif stage in ['seq']:
                     m_name = ref_list[-1]
                 else:
+                    print("stage name not implemented: {}={}".format(stage,ref_list))
                     raise
                 
                 if m_name is not None and restrict_text in m_name:
@@ -123,7 +123,7 @@ class ResultTracker(object):
                 #Save as a total
                 k = f"metric/{split}/{m_name}/total"
                 self.add(['epoch', 'iter'], k, total_container)
-        elif metric_name in ['ksm','rouge']:
+        elif metric_name in ['ksm','rouge'] or 'rouge' in metric_name:
             for k, scores in metrics.items():
                 k_name = f"metric/{split}/{k}"
                 self.add(['epoch', 'iter'], k_name, scores)            

@@ -5,7 +5,6 @@
 # LICENSE file in the root directory of this source tree.
 # ---------------------------------------------------------------
 
-
 TEXT_CUTOFF_POINTS = [
     "Authors' Contributions:",
     "Author's Contributions:",

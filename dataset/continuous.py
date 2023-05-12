@@ -17,7 +17,7 @@ from .base import (
 
 class PmcContinuousDataset(object):
   def __init__(self, data, 
-                active_tasks=None, 
+                chart_tasks=None, 
                 active_charts=None,
                 scale_mode='log10', 
                 scale_eps=[1.100001, 1.100001], 
@@ -29,7 +29,7 @@ class PmcContinuousDataset(object):
     self.debug = debug
 
     # Filter the pmc dataset for certain tasks or charts
-    self.active_tasks = ['task6'] if active_tasks is None else active_tasks
+    self.chart_tasks = ['task6'] if chart_tasks is None else chart_tasks
     self.active_charts = []  if active_charts is None else active_charts
     self.data = self.filter_data(data)
     
@@ -51,9 +51,9 @@ class PmcContinuousDataset(object):
 
   def filter_data(self, data):
     task_req = []
-    if isinstance(self.active_tasks, list):
-      assert 'task6' in self.active_tasks
-      task_req = self.active_tasks
+    if isinstance(self.chart_tasks, list):
+      assert 'task6' in self.chart_tasks
+      task_req = self.chart_tasks
       data = [d for d in data if all(t in d and d[t] != None for t in task_req)]
 
     if len(self.active_charts):
@@ -415,7 +415,6 @@ class PmcContinuousDataset(object):
 
         if len(scale_tgt):
           scale_tgt =  torch.stack(scale_tgt, dim=-1).view(1, -1)
-          #print(scale_tgt.shape)
           series_scale_tgt += scale_tgt
 
         
@@ -429,7 +428,6 @@ class PmcContinuousDataset(object):
             # Prediction: [min_val, first_to_min, median_to_first, third_to_median, max_to_third]
             # Prediction head must contain relu final layer
 
-            #print("ds", point)
             min_val        = point['min']
             first_to_min   = point['first_quartile'] - point['min']
             median_to_first  = point['median'] - point['first_quartile']
@@ -450,11 +448,7 @@ class PmcContinuousDataset(object):
               else:
                 reg_tgt = [point[k] - prev_pt[k] for k in ['x', 'y']]
             except:
-              #print("others", series['data'])
-              #print("error with number of points in line/scatter => ", data['norm_series'])
-              print(point.keys())
               raise
-              continue
 
           else:
             raise NotImplementedError("Invalid chart given")
@@ -481,10 +475,6 @@ class PmcContinuousDataset(object):
         series_reg_tgt += [reg_targets]
         series_reg_mask += [reg_mask]
 
-        if sum(reg_mask) == 0:
-          print("reg_targets", reg_targets)
-          print("series['data']", series['data'])
-          raise
 
         #Ensure all are the same length
         cur_node_len = len(node_type)
@@ -584,7 +574,6 @@ class PmcContinuousDataset(object):
 
           pad_scale_mask = torch.zeros((pad_len), dtype=torch.int32)
           series_scale_mask = torch.cat([series_scale_mask, pad_scale_mask], dim=0)
-          #print("pad series_scale_tgt", series_scale_tgt.shape, series_scale_mask.shape)
 
       #Pad the text? Not needed if all text is the same. series name and categorical names
 

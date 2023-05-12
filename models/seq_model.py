@@ -42,7 +42,7 @@ def init_seq_model(cfg, device_id, load_opt=True):
     decoder2_num_layers = cfg.model.seq.decoder2_num_layers
 
     #0 reserved for tokenizer.pad_token_id, 1 reserved for tokenizer.eos_token_id
-    model_cfg = cfg.model.caption.hf_model
+    model_cfg = cfg.model.seq.hf_model
     assert model_cfg.name in SUPPORTED_MODELS, "Unsupported model: {}".format(model_cfg.name)
 
     cfg_kwargs = {"cache_dir": cfg.cache_dir, 

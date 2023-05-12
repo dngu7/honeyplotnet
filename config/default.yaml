@@ -29,7 +29,7 @@ data:
       max_widen_len: 1
       min_sent_len: 10
     chart_data:
-      active_tasks: ['task6']
+      chart_tasks: ['task6']
       active_charts: []
       norm_mode: minmax
       scale_mode: log10
@@ -37,8 +37,10 @@ data:
       scale_floor: [0.000001, 0.000001]
       sep_token: <SEP>
 model:
-  active: []
+  active: ['continuous']
+  seperate_data_task: True
   seq:
+    opt_mode: 1 #Stage 1: text only, Stage 2: Data only, Stage0: everything
     freeze_encoder: False
     decoder2_num_layers: 8
     hf_model: 
@@ -177,7 +179,7 @@ model:
 train:
   epochs:
     warmup: 0
-    continuous: 100
+    continuous: 150
     seq: 50
     total: 100
   gradient_accum_steps: 1 

@@ -27,7 +27,7 @@ from transformers.trainer_utils import (
 from models.constant import CHART_TO_HEAD_IDX, HEAD_IDX_TO_CHART, UNIQ_CHART_HEADS
 from dataset.base import shift_tokens_right_pad
 from runner.text import ChartTextRunner
-from utils import calculate_frechet_distance
+from fid import calculate_frechet_distance
 from utils.constant import TASK2IDX
 
 try:

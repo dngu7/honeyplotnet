@@ -319,16 +319,6 @@ class BaseDataModel(nn.Module):
     assert temp > 0.0 and temp <= 1.0, "invalid temp given"
     samples, loss_dict, metric_logs = self.train_loop(inputs)
 
-    #samples['chart_type'] = chart_type_pred
-    
-    # if return_labels:
-    #   scale_preds_lbl = inputs['chart_data']['scale']['inputs_embeds']
-    #   cont_preds_lbl = inputs['chart_data']['continuous']['inputs_embeds']
-    #   cont_values_lbl = self.postprocess_continuous(cont_preds_lbl, scale_preds_lbl)
-    #   samples['labels'] = cont_values_lbl
-
-    # samples = self.batch_outputs(samples, to_np=False)
-
     return samples, loss_dict, metric_logs
   
   def batch_outputs(self, outputs, to_np=True):
@@ -351,7 +341,7 @@ class BaseDataModel(nn.Module):
     encoder_output, _ = self.run_encoder(inputs)
 
     y1 = self.enc_proj1(encoder_output)
-    cb_ind1 = self.vq_layer1.get_code_indices(y1)
+    cb_ind1, _ = self.vq_layer1.get_code_indices(y1)
     cb_ind1 = cb_ind1.view(y1.size(0), -1)
 
     if not self.use_mhd:
@@ -360,7 +350,7 @@ class BaseDataModel(nn.Module):
       y2 = self.enc_proj2(encoder_output)
       y2 = self.enc_proj3(y2)
 
-      cb_ind2 = self.vq_layer2.get_code_indices(y2)
+      cb_ind2, _ = self.vq_layer2.get_code_indices(y2)
       cb_ind2 = cb_ind2.view(y2.size(0), -1)
 
       return (cb_ind1, cb_ind2, )
@@ -380,16 +370,12 @@ class BaseDataModel(nn.Module):
         )
 
       y_hat = decoder_input['y_hat']
-
-      ##TODO: This is a temporary measure... Need to figure out how to duplicate on the other side.
       y_hat = y_hat[:,0]
-      #y_hat = torch.flatten(y_hat, start_dim=0, end_dim=1)
     else:
       y_hat = c_base
 
 
     cond = None
-    #chart_types = inputs['chart_data']['chart_type']
     if self.conditional_decoder and ct_idx is not None: 
       cond = self.get_chart_type_emb(ct_idx=ct_idx)
 
@@ -408,13 +394,9 @@ class BaseDataModel(nn.Module):
     dec_hidden_col, dec_hidden_row = self.decoder.decode_y_hat(y_hat)
 
     ################################
-    # predict_scale_data
-    #1 .Create hidden row state by expanding the scale embedding one at a time
-
     scale_preds, hidden_row = self.generate_scale(dec_hidden_row, chart_type_dict)
     
     ################################
-
     cont_preds, hidden_col  = self.generate_continuous(dec_hidden_col, chart_type_dict)
 
 
@@ -423,7 +405,6 @@ class BaseDataModel(nn.Module):
     x_hat = self.reconstruct_x(row_logit, col_logit, scale_preds, cont_preds, eval=True)
 
     #Repeat chart type for each hypothesis
-    #x_hat['chart_type'] = inputs['chart_data']['chart_type']
     x_hat['ct_idx'] = ct_idx
     x_hat['chart_type_dict'] = chart_type_dict
 

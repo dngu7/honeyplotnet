@@ -1,0 +1,31 @@
+---
+exp_name: mvqgan_t5
+model:
+    hf_model: 
+      name: google/t5-v1_1-large 
+  continuous_data:
+    disc: 
+      use: True
+    mhd:
+      use: True
+    vq:
+      emb_dim1: 32
+      emb_dim2: 32
+      n_emb1: 128
+      n_emb2: 128
+      emb_len1: 16
+      emb_len2: 12
+  seq:
+    opt_mode: 1 #Stage 1: text only, Stage 2: Data only, Stage0: everything
+    decoder2_num_layers: 12
+train:
+  optim:
+    learning_rate: 0.0005
+  epochs:
+    seq: 51
+torch_dist:
+  use: true
+eval:
+  fid: true
+  val_step_count: 25
+  write_samples: false

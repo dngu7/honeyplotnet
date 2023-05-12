@@ -30,9 +30,6 @@ def unscale_conts(cont_preds, scale_preds, tab_shape=None, scale_eps=1.00001, sc
     cont_values = []
     for bidx, (all_cont_pred) in enumerate(cont_preds):
 
-      #if bidx == 0:
-        #print(bidx, all_cont_pred[0][:10])
-
       #Can only generate as far as we have predictions available.
       if tab_shape is not None:
         rows = min(row_counts[bidx], all_cont_pred.size(0))
@@ -80,7 +77,6 @@ def unscale_conts(cont_preds, scale_preds, tab_shape=None, scale_eps=1.00001, sc
 
         cont_pred = cont_pred * rng_scale + min_scale
 
-      #print("cont_pred", bidx, cont_pred.shape)
       cont_values.append(cont_pred)
     return cont_values
     
@@ -448,7 +444,6 @@ def _create_scatter_single(x_data, text, f_name, markersize=4, step=None):
 
     label_count = 0
     max_label_len = 0
-    #print(f_name, len(x_values[0]), len(x_values), len(y_values[0]), len(y_values))
     if len(x_values[0]) == 1:
         return
 
@@ -689,7 +684,6 @@ def _create_line_single(x_data, text, f_name, markersize=4, linewidth=2, step=No
 
     label_count = 0
     max_label_len = 0
-    #print(f_name, len(x_values[0]), len(x_values), len(y_values[0]), len(y_values))
     if len(x_values[0]) == 1:
         return
 

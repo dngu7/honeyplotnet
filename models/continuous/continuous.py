@@ -105,7 +105,6 @@ class ContinuousModel(ScaleModel):
 
         cont_pred = cont_pred * rng_scale + min_scale
 
-      #print("cont_pred", bidx, cont_pred.shape)
       cont_values.append(cont_pred)
 
     return cont_values

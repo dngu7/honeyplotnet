@@ -40,7 +40,7 @@ class BaseRunner(object):
     self.cfg = cfg
     self.debug = cfg.debug
     self.device_id = self.local_rank()
-    self.device = f'cuda:{self.local_rank()}'
+    self.device = f'cuda:{self.local_rank()}' if cfg.device_id != 'cpu' else 'cpu'
 
     self.use_fid = cfg.eval.fid
     self.fid_stats = None
@@ -55,8 +55,8 @@ class BaseRunner(object):
     self.logger.info("Runner Initialized - Rank=[{}/{}]".format(self.local_rank(), self.rank()))
 
     self.metrics = []
-    self.metric_names = ['scale', 'continuous', 'categorical','series_name', 'cb1', 'cb2', 'wta','ct','row','col'] #TODO
-    self.print_names  = ['scale', 'continuous', 'categorical','series_name', 'cb1', 'cb2', 'wta','ct','row','col'] #TODO
+    self.metric_names = ['scale', 'continuous', 'categorical','series_name', 'cb1', 'cb2', 'wta','ct','row','col'] 
+    self.print_names  = ['scale', 'continuous', 'categorical','series_name', 'cb1', 'cb2', 'wta','ct','row','col'] 
     
     self.tracker = ResultTracker(['epoch', 'iter'], print_names=self.print_names)
   
@@ -131,7 +131,7 @@ class BaseRunner(object):
     elif isinstance(data, (tuple, list)):
         return type(data)(self._prepare_input(v) for v in data)
     elif isinstance(data, torch.Tensor):
-        kwargs = dict(device=self.device_id)
+        kwargs = dict(device=self.device)
         return data.to(**kwargs)
     return data
 
@@ -223,7 +223,6 @@ class BaseRunner(object):
         chart_type = sample['chart_type']
         assert chart_type in ['point','categorical','boxplot'], chart_type
 
-
         
         if chart_type == 'categorical':
           json_file = self.build_categorical_json(sample)
@@ -237,85 +236,3 @@ class BaseRunner(object):
         with open(filename, 'w') as f:
           json.dump(json_file, f)
 
-
-  def create_vega_json(self, chart_data, save_dir, idx):
-    ''' chart_data: ['chart_type','row','col','continuous' '''
-    chart_type = chart_data['chart_type']
-
-    assert chart_type in ['point', 'categorical','boxplot']
-    if chart_type == 'categorical':
-      json_file = self.build_categorical_json(chart_data)
-    elif chart_type == 'point':
-      json_file = self.build_point_json(chart_data)
-    else:
-      return
-    output_fn = os.path.join(save_dir,  f"{idx}_{chart_type}.json")
-    
-    with open(output_fn, 'w') as f:
-      json.dump(json_file, f)
-
-  def build_point_json(self,  chart_data):
-
-    chart_type = chart_data['chart_type']
-    continuous_data = chart_data['continuous']
-    json_file = get_vega_template(chart_type)
-
-    data = []
-    values = []
-    d = {"name": "table"}
-
-    cols = min(chart_data['col'], len(continuous_data[0]))
-    rows = min(chart_data['row'], len(continuous_data))
-
-    for cidx, row_idx in enumerate(range(rows)): #By series name
-      for col_idx in range(cols): #Right to left
-        v = {}
-        v['x'] = continuous_data[row_idx][col_idx][0]
-        v['y'] = continuous_data[row_idx][col_idx][1]
-        v['c'] = cidx
-        values.append(v)    
-    d['values'] = values #Add a list of dicts
-
-    data.append(d)
-    json_file['data'] = data
-    return json_file
-
-  def build_categorical_json(self,  chart_data):
-
-    chart_type = chart_data['chart_type']
-    continuous_data = chart_data['continuous']
-    chart_text_text = chart_data.get('chart_text')
-    if chart_text_text is None:
-      chart_text_text = [str(i) for i in range(10000)]
-
-    json_file = get_vega_template(chart_type)
-
-    data = []
-    values = []
-    d = {"name": "table"}
-
-    cols = min(chart_data['col'], len(chart_text_text), len(continuous_data[0]))
-    rows = min(chart_data['row'], len(continuous_data))
-    
-    text_idx = 0
-    for cidx, row_idx in enumerate(range(rows)): #By series name
-      for col_idx in range(cols): #Right to left
-        v = {}
-        v['x'] = chart_text_text[col_idx]
-        v['y'] = continuous_data[row_idx][col_idx][0]
-        v['c'] = cidx
-
-        text_idx += 1
-        #Classes
-        if rows > 1:
-          v['c'] = cidx
-
-        values.append(v)
-
-    d['values'] = values #Add a list of dicts
-
-
-    data.append(d)
-    json_file['data'] = data
-    return json_file
-    

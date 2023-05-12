@@ -21,7 +21,6 @@ class PmcGenerateDataset(PmcDataDataset):
         fig_id = d['fig_id']
         context_start = d['fig_index'][fig_id][0]
       except:
-        #print("index: {}     failed to extract fig id: {} from ==> {}".format(index, fig_id, d['fig_index']))
         self.del_list.append(index)
         index += 1
         continue

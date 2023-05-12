@@ -90,7 +90,6 @@ class CausalSelfAttention(nn.Module):
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
         if layer_past is None:
-            #print("att", att.shape, self.mask.shape)
             att = att.masked_fill(self.mask[:,:,:T,:T] == 0, float('-inf'))
 
         if attn_mask is not None:
@@ -472,7 +471,6 @@ class GPTNoEmbed(nn.Module):
         attn_mask = self.prep_atten_mask(attn_mask)
 
         if self.use_pos_embs:
-            #print(self.use_pos_embs, embeddings.shape)
             assert t <= self.block_size, "Cannot forward, model block size is exhausted."
             position_embeddings = self.pos_emb[:, :t, :] # each position maps to a (learnable) vector
             x = self.drop(embeddings + position_embeddings)
