@@ -3,35 +3,31 @@ exp_name: default
 seed: 1
 num_workers: 8
 debug: false
-timeout: 3600
-exp_dir: 
-  home: ''
-gpu:
-  use: true
+use_gpu: true
 torch_dist:
   use: true
-  fsdp: false #REMOVE THIS
   amp: false
   gpus_per_model: 1
   backend: nccl
   init_method: env://
 batch_size_per_gpu: 
-  chart_text: 8
-  continuous: 8
-  seq: 8
-  generate: 8
+  continuous: 64
+  seq: 64
+  generate: 64
+exp_dir: 
+  home: ''
 data:
   name: pmc
   path: 
     home: ''
   dataset:
+    tasks: ['categorical','series_name','axis','caption','data']
     chart_text:
       tgt_token: <mask_1>
       window_size: 16
       widen_rate: 0.1
       max_widen_len: 1
       min_sent_len: 10
-      chart_text_output: ['categorical','series','axis','caption']
     chart_data:
       active_tasks: ['task6']
       active_charts: []
@@ -42,8 +38,9 @@ data:
       sep_token: <SEP>
 model:
   active: []
-  chart_text:
-    name: v0
+  seq:
+    freeze_encoder: False
+    decoder2_num_layers: 8
     hf_model: 
       name: google/t5-v1_1-large
       tgt_token: <mask_1>
@@ -54,7 +51,6 @@ model:
       ignore_pad_token_for_loss: True
       use_fast: True
   continuous_data:
-    name: v2
     active: ['scale', 'continuous'] 
     use_pos_embs: true
     encoder:
@@ -101,7 +97,7 @@ model:
       scale:
         n_head: 1 
     disc:
-      use: False
+      use: True
       disc_start: 100
       disc_loss: hinge
       disc_factor: 1.0
@@ -178,29 +174,17 @@ model:
     loss_fn:
       scale: l1
       continuous: mse
-  seq:
-    name: gpt 
-    gpt:
-      n_layer: 16
-      n_head: 16
-    hf_model: #for embeddings
-      name: google/pegasus-pubmed
-      tgt_token: <mask_1>
-      max_source_len: 1024 
-      max_target_len: 256 
-      pad_to_max_len: True
-      ignore_pad_token_for_loss: True
-      use_fast: True
 train:
   epochs:
     warmup: 0
-    chart_text: 51
-    continuous: 1001
-    seq: 1001
-    total: 701
-  gradient_accum_steps: 1 #18 #42 #64 #64 
+    continuous: 100
+    seq: 50
+    total: 100
+  gradient_accum_steps: 1 
   max_grad_norm: 1.0
   loss_weights:
+    text: 1.0
+    code: 1.0  
     cb1: 1.0
     cb2: 1.0
     wta: 1.0
@@ -214,39 +198,30 @@ train:
     gan: 1.0
     disc: 1.0
   optim:
-    type: Adam
+    type: AdamW
     learning_rate: 0.0005
     betas: [0.9, 0.999]
     eps: 1e-8
     weight_decay: 3e-7
   label_smoothing_factor: 0.1
-  scheduler:
-    type: WarmupLR #linear
-    warmup_type: linear
-    warmup_min_lr: 0
-    warmup_max_lr: 0.001
-    warmup_num_steps: 1000
-    warmup_ratio: 0.0
   intervals:
-    snapshot: 20
-    display: 500000
     eval: 1
-    gen: 50000
+    snapshot: 20
+    display: 20000
+    gen: 20000
     val: 20000
-  resume:
-    is_resume: False
-    exp_name: /
-    snapshot_file: /
 eval:
-  fid: True
+  fid: False
+  val_step_count: 50
+  write_samples: False
   gen_steps: 2
-  max_steps: 256
+  max_steps: 1000000
   sample_interval: 50
+  display_interval: 50
   sample_epoch: 50
   include_inputs_for_metrics: False
   eval_accumulation_steps: 10
-  batch_size: 8
-  num_beams: 1
+  num_beams: 3
   max_length: 256
   repetition_penalty: 1.0
   gen_temperature: 1.0
@@ -256,22 +231,6 @@ eval:
     active: true
     name: google/pegasus-pubmed
     use_fast: true
-zero_opt: #For deepseed
-  stage: 3 
-  allgather_partitions: true
-  allgather_bucket_size: 500000000
-  overlap_comm: false
-  reduce_scatter: true
-  reduce_bucket_size: 500000000
-  contiguous_gradients: true
-  grad_hooks: true
-  round_robin_gradients: false
-  offload_param:
-    device: cpu
-  offload_optimizer:
-    device: cpu
-  autotuning:
-    enabled: false
 fp16: 
   use: false
   eval: false
@@ -281,3 +240,4 @@ fp16:
   hysteresis: 2
   min_loss_scale: 1000
   opt_level: O3
+timeout: 3600

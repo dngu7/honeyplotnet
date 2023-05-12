@@ -10,15 +10,13 @@ import copy
 import wget
 
 from torch.distributed.elastic.utils.data import ElasticDistributedSampler
-from torch.utils.data import DataLoader, SequentialSampler, RandomSampler
-from transformers import DataCollatorForSeq2Seq
+from torch.utils.data import DataLoader, SequentialSampler, RandomSampler, DistributedSampler
 
 from utils import pickle_open
 
 from .seq import PmcSeqDataset
 from .generate import PmcGenerateDataset
 from .continuous import PmcContinuousDataset
-from .chart_text import PmcChartTextDataset
  
 
 def init_dataloader(cfg, mode, stage, models, tokenizers, return_dataset=False):
@@ -27,20 +25,38 @@ def init_dataloader(cfg, mode, stage, models, tokenizers, return_dataset=False):
   data_path       = cfg.data_path
   batch_size      = cfg.batch_size
   num_workers     = cfg.num_workers
-  use_gpu         = cfg.gpu.use
+  use_gpu         = cfg.use_gpu
   use_distributed = cfg.torch_dist.use
 
   #Obtain dataset and model configurations here
+  if mode in ['generate']:
+    dataset_cfg = data_cfg.dataset.chart_data
+    model_cfg   = cfg.model.discrete_data.hf_model
 
-  if stage  == 'chart_text':
-    dataset_cfg = data_cfg.dataset.chart_text
-    model_cfg   = cfg.model.chart_text.hf_model
-  elif stage  in ['seq']:
-    dataset_cfg = {**data_cfg.dataset.chart_data, **data_cfg.dataset.caption}
-    model_cfg   = cfg.model.caption.hf_model
   elif stage in ['continuous']:
     dataset_cfg = data_cfg.dataset.chart_data
-    model_cfg   = cfg.model.chart_text.hf_model
+    model_cfg   = cfg.model.seq.hf_model
+    if stage == 'fid':
+      dataset_cfg['fid_mode'] = True
+
+  elif stage  in ['seq']:
+    dataset_cfg = {**data_cfg.dataset.chart_data, **data_cfg.dataset.caption}
+    label_pad_token_id = -100 if dataset_cfg.get('ignore_pad_token_for_loss') else tokenizers[stage].pad_token_id
+    dataset_cfg['tasks'] = data_cfg.dataset.tasks
+    dataset_cfg['seperate_data_task'] = cfg.model.seperate_data_task
+    dataset_cfg['label_pad_token_id'] = label_pad_token_id
+    dataset_cfg['pad_to_multiple_of'] = None
+    dataset_cfg['max_length'] = None
+
+    decoder_fn = models['seq'].module.prepare_decoder_input_ids_from_labels \
+      if hasattr(models['seq'], 'module') else \
+        models['seq'].prepare_decoder_input_ids_from_labels
+    
+    dataset_cfg['prepare_decoder_id_fn'] = decoder_fn
+    model_cfg   = cfg.model.caption.hf_model
+  
+  else:
+    raise ValueError("Dataset requested unavailable")
   
   #Combine into the same
   dataset_cfg = {**dataset_cfg, **model_cfg, 'debug': cfg.debug}
@@ -52,36 +68,11 @@ def init_dataloader(cfg, mode, stage, models, tokenizers, return_dataset=False):
     tokenizers=tokenizers, 
     dataset_name=data_cfg.name)
 
-  if stage == 'chart_text':
-    module = models[stage].module if hasattr(models[stage], 'module') else models[stage]
-    label_pad_token_id = -100 if dataset_cfg.get('ignore_pad_token_for_loss') else tokenizers[stage].pad_token_id
-    data_collator = DataCollatorForSeq2Seq(
-        tokenizers[stage],
-        model=module,
-        label_pad_token_id=label_pad_token_id,
-        pad_to_multiple_of=None,
-      )
-  else:
-    data_collator = train_dataset.collate_fn
+  data_collator = train_dataset.collate_fn
 
-  if return_dataset:
-    return train_dataset, val_dataset, data_collator
+  val_sampler = DistributedSampler(val_dataset) if use_distributed else SequentialSampler(val_dataset)
 
-  else:
-
-    train_sampler = ElasticDistributedSampler(train_dataset) if use_distributed else RandomSampler(train_dataset)
-    val_sampler = None if use_distributed else SequentialSampler(val_dataset)
-  
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        pin_memory=use_gpu,
-        collate_fn=data_collator,
-        sampler=train_sampler,
-    )
-
-    val_loader = DataLoader(
+  val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
@@ -91,7 +82,19 @@ def init_dataloader(cfg, mode, stage, models, tokenizers, return_dataset=False):
         sampler=val_sampler
     )
 
-    return train_loader, val_loader
+  if return_dataset:
+    return train_dataset, val_loader, data_collator
+
+  train_loader = DataLoader(
+      train_dataset,
+      batch_size=batch_size,
+      num_workers=num_workers,
+      pin_memory=use_gpu,
+      collate_fn=data_collator,
+      sampler=ElasticDistributedSampler(train_dataset) if use_distributed else RandomSampler(train_dataset),
+  )
+
+  return train_loader, val_loader
 
 def select_dataset(mode, stage, root, dataset_cfg, tokenizers, dataset_name='pmc', **kwargs):
 
@@ -113,21 +116,16 @@ def select_dataset(mode, stage, root, dataset_cfg, tokenizers, dataset_name='pmc
   val_data = pickle_open(val_path)
 
   if mode == 'generate':
-    train_ds = PmcGenerateDataset(data=train_data, tokenizer1=tokenizers['seq'], **dataset_cfg)
-    val_ds   = PmcGenerateDataset(data=val_data, tokenizer1=tokenizers['seq'], **val_cfg)   
-  elif stage == 'chart_text':
-    train_ds = PmcChartTextDataset(data=train_data, tokenizer1=tokenizers['chart_text'],**dataset_cfg)
-    val_ds   = PmcChartTextDataset(data=val_data, tokenizer1=tokenizers['chart_text'], **val_cfg)
+    train_ds = PmcGenerateDataset(data=train_data, tokenizer=tokenizers['seq'], **dataset_cfg)
+    val_ds   = PmcGenerateDataset(data=val_data, tokenizer=tokenizers['seq'], **val_cfg)   
   elif stage == 'continuous':
     train_ds = PmcContinuousDataset(data=train_data, **dataset_cfg)
     val_ds   = PmcContinuousDataset(data=val_data, **val_cfg)
   elif stage == 'seq':
     train_ds = PmcSeqDataset(data=train_data, tokenizer=tokenizers['seq'], **dataset_cfg)
     val_ds   = PmcSeqDataset(data=val_data, tokenizer=tokenizers['seq'], **val_cfg)
-
   else:
     raise NotImplementedError()
-
 
   return train_ds, val_ds
 

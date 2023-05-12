@@ -5,12 +5,13 @@
 # LICENSE file in the root directory of this source tree.
 # ---------------------------------------------------------------
 
+
 import math
 import torch
 import numpy as np
 import random
 
-from utils import TASK2PREPEND, CHART_TYPE_MAP, PAD_IDX
+from utils import TASK2PREPEND, CHART_TYPE_MAP
 
 from .base import (
   get_text_window,
@@ -18,32 +19,47 @@ from .base import (
   shift_right_vec
 )
 
-from .chart_text import PmcChartTextDataset
+from .text import PmcTextDataset
 
-class PmcSeqDataset(PmcChartTextDataset):
+class PmcSeqDataset(PmcTextDataset):
   def __init__(self, data, **kwargs):
     super().__init__(data, **kwargs)
 
     self.tokenizer1 = kwargs['tokenizer1']
+    self.seperate_data_task = kwargs['seperate_data_task']
+    self.prepare_decoder_id_fn = kwargs['prepare_decoder_id_fn']
+    self.pad_to_multiple_of = kwargs['pad_to_multiple_of']
+    self.label_pad_token_id = kwargs['label_pad_token_id']
+    self.max_length = kwargs['max_length']
 
     # Filter the pmc dataset for certain tasks or charts
-    self.active_tasks = ['task6'] if kwargs.get('active_tasks') is None else kwargs.get('active_tasks')
+    self.chart_tasks = ['task6'] if kwargs.get('chart_tasks') is None else kwargs.get('chart_tasks')
     self.active_charts = []  if kwargs.get('active_charts') is None else kwargs.get('active_charts')
-    self.data = self.filter_data(data)
+    self.data = self.filter_data(self.data)
     
     # Settings for scaling
-    assert kwargs.get('norm_mode') in ['minmax'] 
+    assert kwargs.get('norm_mode') in ['minmax'] #Offset does not work!
     self.norm_mode = kwargs.get('norm_mode')
 
     assert kwargs.get('scale_mode') in ['log10', 'log'], "scale mode not implemented"
     scale_mode = kwargs.get('scale_mode')
     self.scale_mode  = math.log10 if scale_mode == 'log10' else math.log
-    self.scale_eps   = kwargs.get('scale_eps')   
-    self.scale_floor = kwargs.get('scale_floor')  
+    self.scale_eps   = kwargs.get('scale_eps')  #scale_eps[0] if isinstance(scale_eps, list) else scale_eps
+    self.scale_floor = kwargs.get('scale_floor')  #scale_floor[0] if isinstance(scale_floor, list) else scale_floor
 
     #Assignments
     self.box_plot_keys = ['min', 'first_quartile', 'median',  'third_quartile', 'max']
-    self.node_map      = {'pad': PAD_IDX, 'point': 1, 'eos': 0}
+    self.node_map      = {'pad': self.label_pad_token_id, 'point': 1, 'eos': 0}
+
+  def set_tasks(self, tasks):
+    if isinstance(tasks, str):
+      tasks = [tasks]
+    
+    assert all(t in ['categorical','series_name','axis','caption','data'] for t in tasks), tasks
+    
+    self.tasks = tasks
+    data = self.filter_data(self._data)
+    self.data = self.filter_data_by_tasks(data)
 
   def __getitem__(self, index):
 
@@ -54,7 +70,7 @@ class PmcSeqDataset(PmcChartTextDataset):
       outputs['chart_type'] = self.get_chart_type(d)
       outputs['data'] = self.preprocess_data_series(d)
 
-      if self.perform_checks(outputs):
+      if self.perform_checks(outputs) and d['fig_id'] in d['fig_index']:
         _ = outputs.pop('chart_type')
         break
       else:
@@ -71,39 +87,47 @@ class PmcSeqDataset(PmcChartTextDataset):
     caption_label, all_text, context_start = self.get_caption_label(
       captions, all_text, context_start)
     
-    ###################### 
+    ###########################################
     # Prepare targets (randomly pick a task)
-    #####################
-    inputs = {}
+    ###########################################
 
-    if 'caption' in self.discrete_output:
-      _, outputs['caption'] = self._tokenize(self.tokenizer1, 
-        caption_label, max_source_len=self.max_source_len, 
-        max_target_len=self.max_target_len, is_target=True)
-
+    if 'caption' in self.tasks:
+      _, outputs['caption'] = self._tokenize(self.tokenizer, 
+          caption_label, max_source_len=self.max_source_len, 
+          max_target_len=self.max_target_len, is_target=True)
+      
     series_name = self.get_series_names(d)
 
-    if len(series_name) and 'series' in self.discrete_output:
+    if len(series_name) and 'series_name' in self.tasks:
       series_name = self.sep_token.join(series_name)
       outputs['series_name'] = self.tokenize_tgt_flatten(series_name)
 
     categorical_data = self.get_categorical_values(d)
 
-    if len(categorical_data) > 0 and 'categorical' in self.discrete_output:
+    if len(categorical_data) > 0 and 'categorical' in self.tasks:
       categorical_data = self.sep_token.join(categorical_data)
       outputs['categorical'] = self.tokenize_tgt_flatten(categorical_data)
 
     axis_data = self.get_axis_names(d)
-
-    if len(axis_data) > 0 and 'axis' in self.discrete_output:
+    
+    if len(axis_data) > 0 and 'axis' in self.tasks:
       axis_data = self.sep_token.join(axis_data)
       outputs['axis'] = self.tokenize_tgt_flatten(axis_data)
 
-    task = random.choice(list(o for o in outputs.keys() if o in self.discrete_output))
+    #Randomly pick a task
+    task_list = list(o for o in outputs.keys() if o in self.tasks)
+    #if not self.seperate_data_task:
+    #  _ = task_list.pop('data')
 
-    ######################
+    if len(task_list) == 0:
+      print(f"tasks: {self.tasks}, outputs: {list(outputs.keys())}")
+      raise ValueError
+    
+    task = random.choice(task_list)
+
+    ############################################
     # Prepare inputs (context)
-    ######################    
+    ############################################    
 
     #Tokenize context (document text or caption)
     if task == 'caption':
@@ -121,18 +145,15 @@ class PmcSeqDataset(PmcChartTextDataset):
       #Prepend task to caption
       context = TASK2PREPEND[task] + caption_label
 
-    text_inputs = {}
-
     text_inputs, _ = self._tokenize(self.tokenizer1, 
       context, max_source_len=self.max_source_len, 
       max_target_len=self.max_target_len, is_target=False)
     
     if task == 'data':
-      text_inputs['labels'] = torch.ones(self.max_target_len) * PAD_IDX
+      text_inputs['labels'] = torch.ones(self.max_target_len, dtype=torch.long) * self.label_pad_token_id
     else:
       text_inputs['labels'] = outputs[task]['input_ids']
       
-
     for k in list(text_inputs.keys()):
       text_inputs[k] = text_inputs[k].squeeze(0)  
         
@@ -165,27 +186,42 @@ class PmcSeqDataset(PmcChartTextDataset):
         padding="max_length", truncation=True, return_tensors="pt")
     return inputs
   
-  def collate_captions(self, caption_batch):
-    output = {'text': [], 'input_ids': [], 'attention_mask': [] ,'labels': []}
+  def collate_captions(self, features):
+
+    labels = [feature["labels"] for feature in features] if "labels" in features[0].keys() else None
+    # We have to pad the labels before calling `tokenizer.pad` as this method won't pad them and needs them of the
+    # same length to return tensors.
+    if labels is not None:
+        max_label_length = max(len(l) for l in labels)
+        padding_side = self.tokenizer.padding_side
+        for feature in features:
+            remainder = torch.tensor([self.label_pad_token_id] * (max_label_length - len(feature["labels"])), dtype=torch.long).view(-1)
+            if remainder.shape[0] > 0:
+              feature["labels"] = (
+                  feature["labels"] + remainder if padding_side == "right" else remainder + feature["labels"]
+              )
+
+    features = self.tokenizer.pad(
+        features,
+        padding=self.padding,
+        max_length=self.max_length,
+        pad_to_multiple_of=self.pad_to_multiple_of,
+        return_tensors="pt",
+    )
     
-    for cap in caption_batch:
-      for k, item in cap.items():
-        output[k].append(item)
+    if hasattr(self, "prepare_decoder_id_fn"):
+      features["decoder_input_ids"] = self.prepare_decoder_id_fn(labels=features["labels"])
 
-    for k in ['input_ids', 'attention_mask', 'labels']:
-      output[k] = torch.stack(output[k], dim=0).long()
-
-    return output
-
+    return features
 
   def __len__(self):
       return len(self.data)
 
   def filter_data(self, data):
     task_req = []
-    if isinstance(self.active_tasks, list):
-      assert 'task6' in self.active_tasks
-      task_req = self.active_tasks
+    if isinstance(self.chart_tasks, list):
+      assert 'task6' in self.chart_tasks
+      task_req = self.chart_tasks
       data = [d for d in data if all(t in d and d[t] != None for t in task_req)]
 
     if len(self.active_charts):
@@ -319,17 +355,21 @@ class PmcSeqDataset(PmcChartTextDataset):
         
         series_keys = list(data.keys())
 
+        #if self.debug: print(f"chart type: {chart_type}  series idx: {series_idx} series key: {series_keys}")
+        
         #ignore series that do not have 'x', 'y' or 'y2'
         if chart_type not in ['vertical box'] and \
             (('x' not in series_keys) or \
               ('y' not in series_keys and \
               'y2' not in series_keys)):
+          #if self.debug: print(f"failed series key test: chart type: {chart_type}  pt idx: {pt_idx} key: {series_keys}")
           continue
         
         #Replace y2 with y where possible
         y2_replacement_flag = False
         if 'y2' in series_keys and 'y' not in series_keys and 'x' in series_keys:
           y2_replacement_flag = True
+          #if self.debug: print(f"y2_replacement_flag active: chart type: {chart_type}  pt idx: {pt_idx} key: {series_keys}")
 
         pt_store = {}
 
@@ -351,6 +391,7 @@ class PmcSeqDataset(PmcChartTextDataset):
           
           #Store the data AND update max, min for each series
           elif isinstance(v, (float, int)):
+            #if self.debug: print(f"{k} {v}")
             
             # Assign keys to each grouping
             if k in ['y', 'y2', 'first_quartile', 'min', 'max', 'third_quartile', 'median']:
@@ -375,6 +416,8 @@ class PmcSeqDataset(PmcChartTextDataset):
           unnorm_series['data'].append(pt_store)
           keys = list(pt_store.keys())
           assert True if 'y' in keys else 'y2' not in keys, "{}, {}, {}".format(series_keys, keys, y2_replacement_flag)
+      
+        #if self.debug: print(f"finished obtaining scales: chart type: {chart_type}  pt idx: {pt_idx} key: {series_keys} \n--data: {data} \n--scales: {output['unnorm_scale']}")
       
 
       output['unnorm_series'].append(unnorm_series)
@@ -413,6 +456,8 @@ class PmcSeqDataset(PmcChartTextDataset):
 
           output['norm_scale'][s]['range'][ds_idx] = self.scale_mode(scale_range + self.scale_eps[1])
           output['norm_scale'][s]['range'][ds_idx] = max(output['norm_scale'][s]['range'][ds_idx], self.scale_floor[1])
+
+      #if self.debug: print(f"processing scales: chart type: {chart_type}  series_count: {series_count}  \n--unnormscale: {output['unnorm_scale']} \n--norm_scale: {output['norm_scale']} ")
 
       #Check if any is none. IF so then make it the average of the other scales
       for ds_idx in range(series_count):
@@ -463,6 +508,8 @@ class PmcSeqDataset(PmcChartTextDataset):
             
       if len(norm_series['data']):
         output['norm_series'].append(norm_series)
+
+      #if self.debug: print(f"normalizing data: chart type: {chart_type}   \n--unnorm_series: {output['unnorm_series']} \n--norm_series: {output['norm_series']} ")
 
     return output
 

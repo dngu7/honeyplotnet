@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------
-# Copyright (c) __________________________ 2023.
+# Copyright (c) Cyber Security Research Centre Limited 2022.
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,27 +11,29 @@ import numpy as np
 
 import torch
 from torch.nn import functional as F
-from utils.recon_plots import create_boxplot, create_scatter
+
+from vega import get_vega_template
 
 from transformers.trainer_pt_utils import (
   find_batch_size, 
   nested_concat, 
   nested_numpify,
-  nested_truncate,
 )
 
 from transformers import DataCollatorForSeq2Seq
-
 
 from .text import ChartTextRunner
 from dataset import PmcCaptionInferenceDataset
 from torch.utils.data import DataLoader, SequentialSampler
 
+from models.constant import UNIQ_CHART_HEADS
+
+
 from utils import (
   TASK2PREPEND, 
   prepare_mpl,
   create_bar_chart, 
-  create_scatter,
+  create_line,
   create_boxplot
 )
 
@@ -40,7 +42,7 @@ class GenRunner(ChartTextRunner):
   def __init__(self, stage, cfg):
     super(GenRunner, self).__init__(stage, cfg)
     self.stage = stage
-    self.chart_text_input = cfg.data.dataset.chart_data.chart_text_input
+    self.discrete_input = cfg.data.dataset.chart_data.discrete_input
     self.gen_temperature = cfg.eval.gen_temperature
     self.gen_hypo_count = cfg.eval.hypo_count
     self.gen_hypo_bsz = cfg.eval.hypo_bsz
@@ -49,6 +51,17 @@ class GenRunner(ChartTextRunner):
 
     self.cb1_len = cfg.model.continuous_data.vq.emb_len1
     self.cb2_len = cfg.model.continuous_data.vq.emb_len2
+
+  def set_model_output(self, models, mode):
+    '''
+    Swaps between text and data generation mode.
+    '''
+    
+    if hasattr(models['seq'], 'module'):
+      models['seq'].module.set_output(mode)
+    else:
+      models['seq'].set_output(mode) 
+    
 
   def generate_continuous(self, cb_ind1, cb_ind2, ct_idx, models, tokenizers):
     for m in models.values():
@@ -87,7 +100,38 @@ class GenRunner(ChartTextRunner):
         text, max_length=self.cfg.model.caption.hf_model.max_source_len, 
           padding="max_length", truncation=True, return_tensors="pt")
       return inputs
+  
+
+  def _generate_caption(self, contexts, models, tokenizers):
+    for model in models.values():
+      model.eval()
     
+    all_tasks =  ['caption', 'context']
+
+    #Only run captions
+    task = 'caption'
+    task_str = TASK2PREPEND[task]
+
+    #Check model name
+    self.set_model_output(models, 'text')
+    
+    model = models['seq']
+    tok = tokenizers['seq']
+
+    #Append task to context
+    task_contexts = [task_str + c for c in contexts]
+    inputs = self.tokenize(task_contexts, tok)
+
+    _, tokens, _, _ = self.prediction_step(
+      model, tokenizer=tok, 
+      inputs=inputs, prediction_loss_only=False)
+    
+    tokens = self._pad_across_processes(tokens)
+    tokens = self._nested_gather(tokens)
+    tokens = nested_numpify(tokens)
+
+    return tokens
+  
   def generate_caption(self, loader, models, tokenizers):
     for model in models.values():
       model.eval()
@@ -109,17 +153,24 @@ class GenRunner(ChartTextRunner):
     task = 'caption'
     task_str = TASK2PREPEND[task]
 
+    #Check model name
+    self.set_model_output(models, 'text')
+    
+    model = models['seq']
+    tok = tokenizers['seq']
+
     for step, contexts in enumerate(iterator):
+      
+      if self.debug and step > 1:
+        break
 
       if isinstance(self.cfg.eval.max_steps, int) and step > self.cfg.eval.max_steps:
         break
       
       preds_host['context'] = contexts if preds_host['context'] is None else preds_host['context'] + contexts
-      
       #Append task to context
       task_contexts = [task_str + c for c in contexts]
-
-      inputs = self.tokenize(task_contexts, tokenizers['chart_text'])
+      inputs = self.tokenize(task_contexts, tok)
 
       # Update the observed num examples
       observed_batch_size = find_batch_size(inputs)
@@ -129,19 +180,20 @@ class GenRunner(ChartTextRunner):
           if batch_size is None:
               batch_size = observed_batch_size
               
-      _, logits, _ = self.prediction_step(
-        models['chart_text'], tokenizer=tokenizers['chart_text'], 
+      _, logits, _, _ = self.prediction_step(
+        model, tokenizer=tok, 
         inputs=inputs, prediction_loss_only=False)
       
 
       logits = self._pad_across_processes(logits)
       logits = self._nested_gather(logits)
       preds_host[task] = logits if preds_host[task] is None else nested_concat(preds_host[task], logits, padding_index=-100)
+      
     
       #Move collection to CPU
       #for task in TASK2PREPEND.keys():
-      logits = nested_numpify(preds_host[task])
-      all_preds[task] = logits if all_preds[task] is None else nested_concat(all_preds[task], logits, padding_index=-100)
+      preds_host[task] = nested_numpify(preds_host[task])
+      all_preds[task] = preds_host[task] if all_preds[task] is None else nested_concat(all_preds[task], preds_host[task], padding_index=-100)
 
       all_preds['context'] = preds_host['context'] if all_preds['context'] is None else all_preds['context'] + preds_host['context']
       
@@ -150,23 +202,27 @@ class GenRunner(ChartTextRunner):
 
       
     # Gather all remaining tensors and put them back on the CPU
-    num_samples = self.cfg.eval.max_steps
 
     #for task in TASK2PREPEND.keys():
     logits = nested_numpify(preds_host[task]) if preds_host[task] is not None else None
     if logits is not None:
       all_preds[task] = logits if all_preds[task] is None else nested_concat(all_preds[task], logits, padding_index=-100)
     
-    all_preds[task] = nested_truncate(all_preds[task], num_samples)
-    
     return all_preds
 
-  def generate_chart_text(self, all_captions, models, tokenizers):
+  def caption_conditional_generation(self, all_captions, models, tokenizers, all_tasks):
+
     for model in models.values():
       model.eval()
     
+    #Check model name and setup correct settings
+    mode = 'text'
+    if len(all_tasks) == 1 and all_tasks[0] == 'data':
+      mode = 'data'
 
-    all_tasks = ['series_name', 'categorical', 'axis']
+    model = models['seq']
+    self.set_model_output(models, mode)
+    tok = tokenizers['seq']
 
     # Initialize containers
     preds_host = {t: None for t in all_tasks}
@@ -181,16 +237,13 @@ class GenRunner(ChartTextRunner):
     for step in range(total_steps):
       captions = all_captions[step * batch_size:step * batch_size + batch_size]
 
-      if isinstance(self.cfg.eval.max_steps, int) and step > self.cfg.eval.max_steps:
-        break
-      
       #preds_host['captions'] = captions if preds_host['captions'] is None else preds_host['captions'] + captions
       #Loop through each task and generate
       for task in all_tasks:
         task_str = TASK2PREPEND[task]
         task_contexts = [task_str + c[0] for c in captions]
 
-        inputs = self.tokenize(task_contexts, tokenizers['chart_text'])
+        inputs = self.tokenize(task_contexts, tok)
 
         # Update the observed num examples
         observed_batch_size = find_batch_size(inputs)
@@ -200,8 +253,8 @@ class GenRunner(ChartTextRunner):
             if batch_size is None:
                 batch_size = observed_batch_size
                 
-        _, logits, _ = self.prediction_step(
-          models['chart_text'], tokenizer=tokenizers['chart_text'], 
+        _, logits, _, _ = self.prediction_step(
+          model, tokenizer=tok, 
           inputs=inputs, prediction_loss_only=False)
         
         logits = self._pad_across_processes(logits)
@@ -217,16 +270,12 @@ class GenRunner(ChartTextRunner):
       preds_host = {t: None for t in all_tasks}
       
     # Gather all remaining tensors and put them back on the CPU
-    num_samples = self.cfg.eval.max_steps
 
     for task in all_tasks:
       logits = nested_numpify(preds_host[task]) if preds_host[task] is not None else None
       if logits is not None:
         all_preds[task] = logits if all_preds[task] is None else nested_concat(all_preds[task], logits, padding_index=-100)
       
-      all_preds[task] = nested_truncate(all_preds[task], num_samples)
-    
-    
     return all_preds
 
   def batch_decode(self, tokens, tokenizer, skip_special_tokens=True):
@@ -243,7 +292,6 @@ class GenRunner(ChartTextRunner):
 
     split_text = list(set([t.strip() for t in split_text]))
 
-    #processed_dtext.append(split_text)
     return split_text
 
   def detokenize(self, tokens, tokenizer, seperator='<SEP>'):
@@ -260,36 +308,46 @@ class GenRunner(ChartTextRunner):
     #print("detokenized.decoded tasks: {}".format(decoded.keys()))
     return decoded
 
-  def generate_codebook(self, loader, models):
+  def generate_codebook(self, data_tokens, models):
     for m in models.values():
       if m is not None:
         m.eval()
 
-    iterator = loader.__iter__()
     container = {}
     ct_idxs = []
-    for _, inputs in enumerate(iterator):
-      
-      context_idx = inputs['input_ids']
-      attn_mask = inputs['attention_mask']
+
+    observed_num_examples = 0
+    batch_size = self.bsz
+    total_steps = int(np.ceil(data_tokens.shape[0] / batch_size))
+
+    emb_len1 = self.cfg.model.continuous_data.vq.emb_len1
+    emb_len2 = self.cfg.model.continuous_data.vq.emb_len2
+
+    #Move to torch and gpu
+    
+    for step in range(total_steps):
+      data_token = data_tokens[step * batch_size:step * batch_size + batch_size]
+      data_token = torch.from_numpy(data_token).to(self.device)
 
       with torch.no_grad():
         with self.autocast_smart_context_manager():
-          cb1_logits, cb2_logits, ct_idx, _ = models['seq'](
-            context_idx, attn_mask=attn_mask)
-
-          ct_idxs.append(ct_idx.detach().cpu())
-
-          cb_ind1 = self.sample_indices(cb1_logits, temp=self.gen_temperature)
-
-          cb_ind2 = None
-          if cb2_logits is not None:
-            cb_ind2 = self.sample_indices(cb2_logits, temp=self.gen_temperature)
-
+          
           if models['continuous'].__class__.__name__ == 'DistributedDataParallel':
             cont_module = models['continuous'].module
           else:
             cont_module = models['continuous']
+          
+          ct_idx = data_token[:,:1]
+          cb_ind1 = data_token[:,1:1 + emb_len1]
+          cb_ind2 = data_token[:,1 + emb_len1:1 + emb_len1 + emb_len2]
+
+          ct_idx = ct_idx - 2
+          cb1    = cb1    - 2 - len(UNIQ_CHART_HEADS)
+          if cb2 is not None:
+            cb2  = cb2    - 2 - len(UNIQ_CHART_HEADS) #- self.cfg.model.continuous_data.vq.n_emb1
+
+          ct_idxs.append(ct_idx)
+          #print(ct_idx.shape, cb_ind1.shape, cb_ind2.shape)
 
           samples = cont_module.reconstruct_from_indices(
             cb_ind1=cb_ind1, 
@@ -303,8 +361,8 @@ class GenRunner(ChartTextRunner):
           #Storing outputs cleanly
           for k, v in samples.items():
             if k in ['ct_idx', 'chart_type_dict']: continue
-            if k not in container:
-              container[k] = {} 
+            if k not in container: container[k] = {} 
+
             for kk, vv in v.items():
               if isinstance(vv, list):
                 if kk not in container[k]:
@@ -358,30 +416,43 @@ class GenRunner(ChartTextRunner):
     
     #Generate captions
     caption_tokens = self.generate_caption(eval_loader, models, tokenizers)
-    caption_text = self.detokenize(caption_tokens, tokenizers['caption'])
+    caption_text = self.detokenize(caption_tokens, tokenizers['seq'])
     
     contexts = caption_tokens['context']
     captions = caption_text['caption']
 
-    chart_text_tokens = self.generate_chart_text(captions, models, tokenizers)
-    chart_text_dict = self.detokenize(chart_text_tokens, tokenizers['chart_text'])
+    all_tasks = ['series_name', 'categorical', 'axis']
+    discrete_tokens = self.caption_conditional_generation(captions, models, tokenizers, all_tasks=all_tasks)
+    discrete_text = self.detokenize(discrete_tokens, tokenizers['seq'])
 
-    chart_data = self.generate_codebook(caption_loader, models)
+    all_tasks = ['data']
+    data_tokens = self.caption_conditional_generation(captions, models, tokenizers, all_tasks=all_tasks)
 
-    caption_loader = self.create_loader(captions, 
-      models['chart_text'], tokenizers['seq']
-      )
+    chart_data = self.generate_codebook(data_tokens['data'], models)
+    if 'chart_data' in chart_data:
+      chart_data = chart_data['chart_data']
+
+    chart_data_mpl = prepare_mpl(chart_data)
+
     self.logger.info("Completed generation. Starting save process.")
 
-    chart_text_dict['caption'] = [c[0] for c in captions]
-    chart_text_dict['axis_titles'] = chart_text_dict.pop('axis')
+    discrete_text['caption'] = [c[0] for c in captions]
+    discrete_text['contexts'] = contexts
 
-    chart_text_dict['categorical'] = chart_text_dict.pop('chart_text')
+    self.create_raw_json(data=chart_data_mpl, text_data=discrete_text, save_dir=self.cfg.sample_dirs['generate']['json'])
+  
+  def create_raw_json(self, data, text_data, save_dir):
+    
+    for idx, x_data in enumerate(data):
+      json_input = {}
+      for k, v in text_data.items():
+        json_input[k] = v[idx]
+      
+      json_input['data'] = x_data
 
-    chart_text_dict['categorical'] = [s for s in chart_text_dict['categorical'] if 'unnamed' not in s]
-    chart_text_dict['series_name'] = sorted([s for s in chart_text_dict['series_name'] if 'unnamed' not in s])
-
-    self.create_mpl_plots(x=chart_data, text_data=chart_text_dict, save_dir=self.cfg.sample_dirs['generate'])
+      output_fn = os.path.join(save_dir,  f"{idx}.json")
+      with open(output_fn, 'w') as f:
+        json.dump(json_input, f)
 
   def create_mpl_plots(self, x, text_data,save_dir):
 
@@ -401,16 +472,89 @@ class GenRunner(ChartTextRunner):
       if x_data['head_type'] == 'categorical':
           create_bar_chart(x_data, text, f_name)
       elif x_data['head_type'] == 'point':
-          create_scatter(x_data, text, f_name)
+          create_line(x_data, text, f_name)
       elif x_data['head_type'] == 'boxplot':
           create_boxplot(x_data, text, f_name)
       else:
         raise ValueError(f"Invalid chart type given: {x_data['head_type']}")
-        
-  def save_raw_json(self, data, text, save_dir, idx):    
-    output_fn = os.path.join(save_dir,  f"{idx}.json")
+
+  def create_vega_json(self, chart_data, save_dir, idx):
+    ''' chart_data: ['chart_type','row','col','continuous' '''
+    chart_type = chart_data['chart_type']
+
+    assert chart_type in ['point', 'categorical','boxplot']
+    if chart_type == 'categorical':
+      json_file = self.build_categorical_json(chart_data)
+    elif chart_type == 'point':
+      json_file = self.build_point_json(chart_data)
+    else:
+      return
+    output_fn = os.path.join(save_dir,  f"{idx}_{chart_type}.json")
+    
     with open(output_fn, 'w') as f:
-      json.dump(data, f)
+      json.dump(json_file, f)
+
+  def build_point_json(self,  chart_data):
+
+    chart_type = chart_data['chart_type']
+    continuous_data = chart_data['continuous']
+    json_file = get_vega_template(chart_type)
+
+    data = []
+    values = []
+    d = {"name": "table"}
+
+    cols = min(chart_data['col'], len(continuous_data[0]))
+    rows = min(chart_data['row'], len(continuous_data))
+
+    for cidx, row_idx in enumerate(range(rows)): #By series name
+      for col_idx in range(cols): #Right to left
+        v = {}
+        v['x'] = continuous_data[row_idx][col_idx][0]
+        v['y'] = continuous_data[row_idx][col_idx][1]
+        v['c'] = cidx
+        values.append(v)    
+    d['values'] = values #Add a list of dicts
+
+    data.append(d)
+    json_file['data'] = data
+    return json_file
+
+  def build_categorical_json(self,  chart_data):
+
+    chart_type = chart_data['chart_type']
+    continuous_data = chart_data['continuous']
+    discrete_text = chart_data['categorical']
+
+    json_file = get_vega_template(chart_type)
+
+    data = []
+    values = []
+    d = {"name": "table"}
+
+    cols = min(chart_data['col'], len(discrete_text), len(continuous_data[0]))
+    rows = min(chart_data['row'], len(continuous_data))
+    
+    text_idx = 0
+    for cidx, row_idx in enumerate(range(rows)): #By series name
+      for col_idx in range(cols): #Right to left
+        v = {}
+        v['x'] = discrete_text[col_idx]
+        v['y'] = continuous_data[row_idx][col_idx][0]
+        v['c'] = cidx
+
+        text_idx += 1
+        #Classes
+        if rows > 1:
+          v['c'] = cidx
+
+        values.append(v)
+
+    d['values'] = values 
+
+    data.append(d)
+    json_file['data'] = data
+    return json_file
 
   def sample_indices(self, logits, temp=1.0):
     bsz = logits.size(0)

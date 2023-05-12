@@ -78,17 +78,14 @@ def load_checkpoint(state, ckpt_dirs, device_id, rank, distributed):
 
         blob_len = torch.tensor(len(raw_blob))
         dist.broadcast(blob_len, src=max_rank, group=pg)
-        #print("N[{}/{}] Broadcast Size {}".format(device_id, rank, blob_len))
 
         if rank != max_rank:
             blob = torch.zeros(blob_len.item(), dtype=torch.uint8)
         else:
 
             blob = torch.as_tensor(raw_blob, dtype=torch.uint8)
-            #blob = torch.as_tensor(numpy.array(raw_blob), dtype=torch.uint8)
 
         dist.broadcast(blob, src=max_rank, group=pg)
-        #print("N[{}/{}] Broadcast Complete".format(device_id, rank))
 
         if rank != max_rank:
             with io.BytesIO(blob.numpy()) as f:
@@ -98,7 +95,6 @@ def load_checkpoint(state, ckpt_dirs, device_id, rank, distributed):
         # wait till everyone has loaded the checkpoint
         dist.barrier(group=pg)
 
-    #print("N[{}/{}] Ckpt Restore Complete".format(device_id, rank))
     return state
 
 

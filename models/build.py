@@ -9,8 +9,6 @@
 import torch
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.distributed.elastic.utils.data import ElasticDistributedSampler
-
 
 from .conv import Conv1dEncoder, Conv1dDecoder 
 from .continuous import ContinuousModel, Discriminator
@@ -19,7 +17,6 @@ from .mh_dropout import MHDropoutNetRandom1D
 from models.vq import VectorQuantizer
 
 from .seq_model import init_seq_model
-from dataset import init_dataloader
 
 from transformers import (
   AutoConfig, AutoTokenizer, 
@@ -28,16 +25,13 @@ from transformers import (
 
 from transformers.models.t5.modeling_t5 import T5Stack
 
-from torch.utils.data import DataLoader
-
 def init_model(cfg, mode, stage, device_id):
   '''Initialize all models according to config file'''
   
   use_distributed = cfg.torch_dist.use
   active_models   = cfg.model.active
 
-  models, toks, opts, schs, colls, loaders = {}, {}, {}, {}, {}, {}
-  train_ds, val_ds = {},{}
+  models, toks, opts, schs = {}, {}, {}, {}
 
   if cfg.eval.ksm.active:
     models['ksm'], toks['ksm'] = init_ksm_model(cfg)
@@ -53,8 +47,6 @@ def init_model(cfg, mode, stage, device_id):
     
   #Prepare models for distributed training
   if use_distributed:
-    train_ds[stage], loaders['val'], colls[stage] = init_dataloader(
-        cfg, mode, stage, models, toks, return_dataset=True)
     
     for s in models.keys():
       models[s] = to_distributed(
@@ -70,7 +62,7 @@ def init_model(cfg, mode, stage, device_id):
       if models[s] is not None and device_id != 'cpu':
         models[s].to('cuda:{}'.format(device_id))
 
-  return models, toks, opts, schs, loaders
+  return models, toks, opts, schs
 
 def to_distributed(cfg, model, device_id):
   if model is None: return None
@@ -279,78 +271,6 @@ def init_disc_model(cfg, device_id):
 
   return model, opt
 
-def init_chart_text_model(cfg, device_id, sep_token='<SEP>'):
-  model_cfg = cfg.model.chart_text.hf_model
-  
-  hf_config = AutoConfig.from_pretrained(
-        model_cfg.name, cache_dir=cfg.cache_dir
-        )
-  
-  tokenizer = AutoTokenizer.from_pretrained(
-        model_cfg.name,
-        use_fast=False,
-        cache_dir=cfg.cache_dir,
-        model_max_length=model_cfg.model_max_length
-        )
-
-  num_added_toks = tokenizer.add_tokens([sep_token], special_tokens=True)
-  
-  if cfg.rank == 0:
-    print("chart_text model config : backbone={} sep_token={} [{}]".format(model_cfg.name,sep_token,num_added_toks))
-
-  model, opt = None, None
-  
-  model = AutoModelForSeq2SeqLM.from_pretrained(
-        model_cfg.name,
-        from_tf=False, 
-        config=hf_config,
-        cache_dir=cfg.cache_dir
-        )
-
-  model.resize_token_embeddings(len(tokenizer))
-  print("Number of tokens: {}".format(len(tokenizer)))
-  #print("Embeddings: {}".format(model.shared.shape))
-  
-  if model.config.decoder_start_token_id is None:
-      raise ValueError("Make sure that `config.decoder_start_token_id` is correctly defined")
-
-  if device_id is not 'cpu':
-    model.cuda(device_id)
-
-  params = list(filter(lambda p: p.requires_grad, model.parameters()))
-  lr = cfg.train.optim.learning_rate
-  betas = cfg.train.optim.betas
-  if cfg.train.optim.type == 'AdamW':
-    opt = torch.optim.AdamW(params, lr=lr, betas=betas)
-  elif cfg.train.optim.type == 'Adam':
-    opt = torch.optim.Adam(params, lr=lr, betas=betas)
-  else:
-    raise NotImplementedError()
-
-  return model, tokenizer, opt
-
-def init_seq_llm_model(cfg):
-  sep_token = cfg.data.dataset.chart_data.sep_token
-  model_cfg = cfg.model.seq.hf_model
-  hf_config = AutoConfig.from_pretrained(
-        model_cfg.name, cache_dir=cfg.cache_dir, 
-        )
-  tokenizer = AutoTokenizer.from_pretrained(
-        model_cfg.name,
-        use_fast=model_cfg.use_fast, cache_dir=cfg.cache_dir, 
-        )
-        
-  num_added_toks = tokenizer.add_tokens([sep_token], special_tokens=True)
-
-  model = AutoModelForSeq2SeqLM.from_pretrained(
-      model_cfg.name,
-      from_tf=False, 
-      config=hf_config, cache_dir=cfg.cache_dir, 
-      )
-  model.resize_token_embeddings(len(tokenizer))
-
-  return model, tokenizer
-
 def init_ksm_model(cfg):
 
   model_cfg = cfg.eval.ksm  
@@ -417,66 +337,3 @@ def init_transformer(tf_cfg, block_size, emb_dim, use_pos_embs=True):
     raise NotImplementedError()
 
   return m
-
-def create_ds_config(cfg):
-  micro_bsz = "auto" if cfg.zero_opt.autotuning.enabled else cfg.batch_size
-  accum_steps = "auto" if cfg.zero_opt.autotuning.enabled else cfg.train.gradient_accum_steps
-
-  ds_cfg = {
-    "tensorboard":{
-      "enabled": False,
-      "output_path": cfg.tb_dir,
-      "job_name": cfg.exp_name,
-    },
-    "train_micro_batch_size_per_gpu": micro_bsz,
-    "gradient_accumulation_steps": accum_steps,
-    "gradient_clipping": cfg.train.max_grad_norm,
-    "optimizer": {
-      "type": cfg.train.optim.type,
-      "params": {
-        "lr": float(cfg.train.optim.learning_rate),
-        "betas": cfg.train.optim.betas,
-        "eps": float(cfg.train.optim.eps),
-        "weight_decay": float(cfg.train.optim.weight_decay)
-      }
-    },
-    "scheduler": {
-      "type": cfg.train.scheduler.type,
-      "params": {
-          "warmup_type": cfg.train.scheduler.warmup_type,
-          "warmup_min_lr": cfg.train.scheduler.warmup_min_lr,
-          "warmup_max_lr":  cfg.train.scheduler.warmup_max_lr,
-          "warmup_num_steps": cfg.train.scheduler.warmup_num_steps,
-      }
-    },
-    "fp16": {
-      "enabled": cfg.fp16.use,
-      "loss_scale": cfg.fp16.loss_scale,
-      "initial_scale_power": cfg.fp16.initial_scale_power,
-      "loss_scale_window": cfg.fp16.loss_scale_window,
-      "hysteresis": cfg.fp16.hysteresis,
-      "min_loss_scale": cfg.fp16.min_loss_scale,
-      "opt_level": cfg.fp16.opt_level
-      },
-    "zero_optimization": {
-      "stage": cfg.zero_opt.stage,
-      "allgather_partitions": cfg.zero_opt.allgather_partitions,
-      "allgather_bucket_size": cfg.zero_opt.allgather_bucket_size,
-      "overlap_comm": cfg.zero_opt.overlap_comm,
-      "reduce_scatter": cfg.zero_opt.reduce_scatter,
-      "reduce_bucket_size": cfg.zero_opt.reduce_bucket_size,
-      "contiguous_gradients" : cfg.zero_opt.contiguous_gradients,
-      "grad_hooks" : cfg.zero_opt.grad_hooks,
-      "round_robin_gradients" : cfg.zero_opt.round_robin_gradients,
-      "offload_param": {"device": cfg.zero_opt.offload_param.device},
-      "offload_optimizer": {"device": cfg.zero_opt.offload_optimizer.device}
-    },
-    "autotuning": {
-      "enabled": cfg.zero_opt.autotuning.enabled,
-      "arg_mappings": {
-        "train_micro_batch_size_per_gpu": cfg.zero_opt.autotuning.enabled,
-        "gradient_accumulation_steps ": cfg.train.gradient_accum_steps
-      }
-      }
-  }
-  return ds_cfg

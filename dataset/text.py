@@ -5,21 +5,22 @@
 # LICENSE file in the root directory of this source tree.
 # ---------------------------------------------------------------
 
+
 import random
+
 import torch
 
 from utils import TASK2PREPEND
+
 from .data import PmcDataDataset
 from .base import get_text_window
 
-class PmcChartTextDataset(PmcDataDataset):
-  def __init__(self, **kwargs):
-    super().__init__( **kwargs)
+class PmcTextDataset(PmcDataDataset):
+  def __init__(self, data, **kwargs):
+    super().__init__( data, **kwargs)
 
-    # chart_text_output: controls which task is being trained. 
-    assert self.chart_text_output is not None or len(self.chart_text_output) > 0, "Must have atleast one enabled."
-    self.data = self.filter_data(self.data)
-    
+    assert self.tasks is not None or len(self.tasks) > 0
+    self.data = self.filter_data_by_tasks(self._data)
 
   def __getitem__(self, index):
       
@@ -48,26 +49,27 @@ class PmcChartTextDataset(PmcDataDataset):
       inputs = {}
       outputs = {}
 
-      if 'caption' in self.chart_text_output:
+      if 'caption' in self.tasks:
         _, outputs['caption'] = self._tokenize(self.tokenizer, 
-        caption_label, max_source_len=self.max_source_len, 
-        max_target_len=self.max_target_len, is_target=True)
+          caption_label, max_source_len=self.max_source_len, 
+          max_target_len=self.max_target_len, is_target=True)
 
       series_name = self.get_series_names(d)
 
-      if len(series_name) and 'series' in self.chart_text_output:
+      if len(series_name) and 'series_name' in self.tasks:
         series_name = self.sep_token.join(series_name)
         outputs['series_name'] = self.tokenize_tgt_flatten(series_name)
 
       categorical_data = self.get_categorical_values(d)
 
-      if len(categorical_data) > 0 and 'categorical' in self.chart_text_output:
+      if len(categorical_data) > 0 and 'categorical' in self.tasks:
         categorical_data = self.sep_token.join(categorical_data)
+        #categorical_data = '{}'.format(categorical_data)
         outputs['categorical'] = self.tokenize_tgt_flatten(categorical_data)
 
       axis_data = self.get_axis_names(d)
 
-      if len(axis_data) > 0 and 'axis' in self.chart_text_output:
+      if len(axis_data) > 0 and 'axis' in self.tasks:
         axis_data = self.sep_token.join(axis_data)
         outputs['axis'] = self.tokenize_tgt_flatten(axis_data)
 
@@ -106,10 +108,10 @@ class PmcChartTextDataset(PmcDataDataset):
       
       return inputs
 
-  def filter_data(self, data):
+  def filter_data_by_tasks(self, data):
     new_data = []
 
-    if 'caption' in self.chart_text_output:
+    if 'caption' in self.tasks or 'data' in self.tasks:
       return data
     
     #Ensure a balanced number of every data type
@@ -117,18 +119,18 @@ class PmcChartTextDataset(PmcDataDataset):
       series_name = self.get_series_names(d)
       categorical_data = self.get_categorical_values(d)
       axis_data = self.get_axis_names(d)
-      if (len(series_name) and 'series' in self.chart_text_output) \
-        or (len(categorical_data) and 'categorical' in self.chart_text_output) \
-           or (len(axis_data) and 'axis' in self.chart_text_output):
+      if (len(series_name) and 'series_name' in self.tasks) \
+        or (len(categorical_data) and 'categorical' in self.tasks) \
+           or (len(axis_data) and 'axis' in self.tasks):
         new_data.append(d)
     return new_data
 
   def tokenize_tgt_flatten(self, text, flatten=False):
     #list of integers. 
-    with self.tokenizer1.as_target_tokenizer():
-      tokens = self.tokenizer1(text, max_length=self.max_target_len, padding="max_length", truncation=True)
+    with self.tokenizer.as_target_tokenizer():
+      tokens = self.tokenizer(text, max_length=self.max_target_len, padding="max_length", truncation=True)
 
-    input_ids = [l if l != self.tokenizer1.pad_token_id else -100 for l in tokens['input_ids']]
+    input_ids = [l if l != self.tokenizer.pad_token_id else -100 for l in tokens['input_ids']]
 
     if flatten:
       input_ids = torch.tensor([item for sublist in input_ids for item in sublist], dtype=torch.long)

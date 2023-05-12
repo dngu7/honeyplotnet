@@ -632,6 +632,4 @@ class PmcContinuousDataset(object):
     inputs['labels']['col'] = inputs['node']['input_ids'][:,0,:]
     inputs['labels']['row'] = inputs['node']['input_ids'][:,:,0]
 
- 
-
     return inputs

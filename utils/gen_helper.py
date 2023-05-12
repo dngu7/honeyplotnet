@@ -122,8 +122,8 @@ def setup_gpu_cfg(cfg):
   if not dist_avail:
     raise SystemError("Torch Distributed Package Unavailable")
 
-  if n_gpus == 0 or not cfg.gpu.use:
-    cfg.gpu.use = False
+  if n_gpus == 0 or not cfg.use_gpu:
+    cfg.use_gpu = False
     cfg.torch_dist.use = False
     cfg.rank = 'cpu'
     cfg.device_id = 'cpu'

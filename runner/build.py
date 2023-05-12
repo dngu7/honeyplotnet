@@ -13,8 +13,6 @@ from .seq import SeqRunner
 def get_runners(cfg, stage):
   if stage == 'generate':
     runner = GenRunner
-  elif stage == 'chart_text':
-    runner = ChartTextRunner
   elif stage == 'continuous':
     runner = ContinuousRunner
   elif stage == 'seq':
