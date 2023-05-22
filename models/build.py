@@ -36,7 +36,7 @@ def init_model(cfg, mode, stage, device_id):
   if cfg.eval.ksm.active:
     models['ksm'], toks['ksm'] = init_ksm_model(cfg)
 
-  models['continuous'], opts['continuous'] = init_continuous_model(cfg)
+  models['continuous'], opts['continuous'] = init_plot_data_model(cfg)
   
   if cfg.model.continuous_data.disc.use:
     models['disc'], opts['disc'] = init_disc_model(cfg, device_id)
@@ -70,7 +70,7 @@ def to_distributed(cfg, model, device_id):
   model = DDP(model, device_ids=[device_id], find_unused_parameters=cfg.debug) 
   return model 
 
-def init_continuous_model(cfg):
+def init_plot_data_model(cfg):
 
   use_fp16      = cfg.fp16.use
   cd_cfg        = cfg.model.continuous_data
@@ -105,7 +105,6 @@ def init_continuous_model(cfg):
   dec_proj_col = nn.Conv1d(last_chn_dec, max_blocks.points, 1)
   dec_proj_row = nn.Conv1d(last_chn_dec, max_blocks.series, 1)
   
-  dec_tf_name = decoder_cfg.transformer.name
   dec_tf_col = init_transformer(decoder_cfg.transformer, 
     block_size=max_blocks.points + 1, emb_dim=vq_cfg.emb_dim1)
   dec_tf_row = init_transformer(decoder_cfg.transformer, 
@@ -120,7 +119,7 @@ def init_continuous_model(cfg):
     'random_restart': vq_cfg.random_restart
     }
 
-  vq_layer1 = get_vq_layer(vq_cfg.name, **vq1_kwargs)
+  vq_layer1 = VectorQuantizer(**vq1_kwargs)
 
   ################################
   # 3. MH Dropout Block
@@ -139,7 +138,7 @@ def init_continuous_model(cfg):
       'random_restart': vq_cfg.random_restart
       }
 
-    vq_layer2 = get_vq_layer(vq_cfg.name, **vq2_kwargs)
+    vq_layer2 = VectorQuantizer(**vq2_kwargs)
     enc_proj2 = nn.Conv1d(enc_conv_kwargs['channels'][-1], vq_cfg.emb_len2, 1)
     enc_proj3 = nn.Linear(vq_cfg.emb_dim1, vq_cfg.emb_dim2)
 
@@ -165,9 +164,8 @@ def init_continuous_model(cfg):
       'bottleneck': mhd_cfg.bottleneck
     }
 
-    mhd_layer = get_mhd_layer(mhd_cfg.name, **mhd_kwargs)
+    mhd_layer = MHDropoutNetRandom1D(**mhd_kwargs)
     
-
   data_model_kwargs = {
     'enc_conv': enc_conv,
     'enc_proj1': enc_proj1,
@@ -177,7 +175,6 @@ def init_continuous_model(cfg):
     'dec_conv': dec_conv,
     'dec_tf_col': dec_tf_col,
     'dec_tf_row': dec_tf_row, 
-    'dec_tf_name': dec_tf_name,
     'dec_proj_col': dec_proj_col,
     'dec_proj_row': dec_proj_row, 
     'vq_layer1': vq_layer1,
@@ -197,7 +194,6 @@ def init_continuous_model(cfg):
     'scale_mode': cfg.data.dataset.chart_data.scale_mode,
     'scale_eps': cfg.data.dataset.chart_data.scale_eps,
     'scale_floor': cfg.data.dataset.chart_data.scale_floor,
-    'scale_n_head': decoder_cfg.scale.n_head,
     'norm_mode': cfg.data.dataset.chart_data.norm_mode,
     'cont_loss_fn': cfg.model.continuous_data.loss_fn.continuous,
     'scale_loss_fn': cfg.model.continuous_data.loss_fn.scale,
@@ -295,20 +291,6 @@ def init_ksm_model(cfg):
     print("KSM CFG | backbone={}".format(model_cfg.name))
 
   return model, tokenizer
-
-def get_vq_layer(name, **kwargs):
-  if name == 'vq':
-      m = VectorQuantizer
-  else:
-      raise NotImplementedError()
-  return m(**kwargs)
-
-def get_mhd_layer(name, **kwargs):
-  if name.lower() == 'mhd1d':
-    m = MHDropoutNetRandom1D
-  else:
-      raise NotImplementedError("Invalid distributed dropout block name: {} ".format(name))
-  return m(**kwargs)
 
 def init_transformer(tf_cfg, block_size, emb_dim, use_pos_embs=True):
   if tf_cfg.name == 'gpt':

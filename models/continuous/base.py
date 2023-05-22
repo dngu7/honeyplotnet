@@ -31,13 +31,13 @@ class BaseDataModel(nn.Module):
   def __init__(self, 
     enc_conv, enc_proj1, vq_layer1,
     dec_conv, dec_proj_col, dec_proj_row, 
-    dec_tf_col, dec_tf_row, dec_tf_name, enc_tf=None, 
+    dec_tf_col, dec_tf_row, enc_tf=None, 
     use_mhd=False, mhd_layer=None, enc_proj2=None, enc_proj3=None, 
     vq_layer2=None, emb_dim1=8,  emb_len1=4, emb_len2=None, 
     max_series_blocks=5, max_cont_blocks=32, 
     conditional_encoder=False, conditional_decoder=True, 
     scale_mode='log10', scale_eps=1.00001,
-    scale_floor=-1.0, scale_n_head=1, norm_mode='minmax',
+    scale_floor=-1.0, norm_mode='minmax',
     cont_loss_fn='l1', scale_loss_fn='l1', 
     use_pos_embs=True, hypothese_bsz=2048, hypothese_count=2048,
     device='cpu', fp16=False, debug=False):
@@ -89,7 +89,6 @@ class BaseDataModel(nn.Module):
       dec_proj_row=dec_proj_row,
       dec_tf_col=dec_tf_col,
       dec_tf_row=dec_tf_row,
-      dec_tf_name=dec_tf_name,
       emb_dim1=emb_dim1,
       cont_loss_fn=cont_loss_fn,
       scale_loss_fn=scale_loss_fn,
@@ -97,7 +96,6 @@ class BaseDataModel(nn.Module):
       max_cont_blocks=max_cont_blocks,
       use_mhd=use_mhd,
       hypothese_bsz=hypothese_bsz,
-      scale_n_head=scale_n_head,
       scale_floor=scale_floor,
       norm_mode=norm_mode,
       device=device,
@@ -244,6 +242,8 @@ class BaseDataModel(nn.Module):
 
   def run_decoder(self, y_hat, chart_type_dict, cond=None, labels=None, wta_idx=None):
     
+    # "decoder_inputs_embeds" are the right shifted inputs. 
+    # See dataset.continuous.py (lines 599)
     scale_embd, scale_mask, s_loss = self.encoder.preencode_scale(
           inputs_embeds=labels['chart_data']['scale']['decoder_inputs_embeds'],
           attention_mask=labels['chart_data']['scale']['decoder_attention_mask'],
@@ -355,14 +355,16 @@ class BaseDataModel(nn.Module):
 
       return (cb_ind1, cb_ind2, )
 
-
   def reconstruct_from_indices(self, ct_idx, cb_ind1, cb_ind2=None, hypo_count=4, hypo_bsz=4, temp=1.0, greedy=True):
 
+    # Obtain embeddings from vq codebooks
     c_base = self.vq_layer1(cb_ind1, is_indices=True)
 
+      
     c_i = None
     if self.use_mhd:
       c_i = self.vq_layer2(cb_ind2, is_indices=True)      
+
       decoder_input, _ = self.run_mhd_layer(
         c_base=c_base, 
         secondary_latents=c_i, 
@@ -375,22 +377,25 @@ class BaseDataModel(nn.Module):
       y_hat = c_base
 
 
+    # Obtain chart type embedding
     cond = None
     if self.conditional_decoder and ct_idx is not None: 
       cond = self.get_chart_type_emb(ct_idx=ct_idx)
 
-    chart_type_dict = get_chart_type_from_idx(ct_idx)
-
-    #Sample decoder
     if len(y_hat.shape) == 4 and self.use_mhd and cond is not None and hypo_bsz > 1:
       repeat_frame = make_repeat_frame(cond, hypo_bsz=hypo_bsz)
       cond = cond.unsqueeze(self.mhd_layer.hypothese_dim).repeat(repeat_frame)
       cond = torch.flatten(cond, start_dim=0, end_dim=1)
-    
 
+    #Prepend chart type embedding    
     if cond is not None:
       y_hat = torch.cat([cond, y_hat], dim=1)
 
+    # For decoder heads
+    chart_type_dict = get_chart_type_from_idx(ct_idx)
+
+    
+    #Split y_hat into two paths: Bottom and top
     dec_hidden_col, dec_hidden_row = self.decoder.decode_y_hat(y_hat)
 
     ################################
@@ -398,7 +403,6 @@ class BaseDataModel(nn.Module):
     
     ################################
     cont_preds, hidden_col  = self.generate_continuous(dec_hidden_col, chart_type_dict)
-
 
     col_logit, row_logit, _, _ = self.decoder.decode_tab_shape(hidden_col, hidden_row)
 
@@ -501,8 +505,7 @@ class BaseDataModel(nn.Module):
     scale_embd = torch.zeros([bsz, 1, self.emb_dim1], device=self.device, dtype=self.dtype_float)
     scale_preds = [[] for _ in range(bsz)]
 
-    for _ in range(self.max_series_blocks):
-
+    for sidx in range(self.max_series_blocks):
 
       # Generate rows starting with zeros
       hidden_state = self.decoder.dec_tf_row(
@@ -510,6 +513,7 @@ class BaseDataModel(nn.Module):
         encoder_hidden_states=dec_hidden_row
       ).last_hidden_state
 
+      # Collect predictions from multi-head group
       scale_pred, _, _ = self.decoder.decode_scale(hidden_state, chart_type_dict)
 
       #Collect only the last prediction of each output
@@ -524,8 +528,10 @@ class BaseDataModel(nn.Module):
       for head_name, ind in chart_type_dict.items():
         scale_x = torch.stack([v[-1] for bidx, v in enumerate(scale_preds) if bidx in ind], dim=0) #[:, -1:, :]
         scale_enc   = self.encoder.cont_encoder['scale'][head_name](scale_x)
-        scale_embd[ind,-1:] = scale_enc
-
+        pos_emb = self.encoder.pos_emb_scale[:,sidx:sidx + 1,:] if self.encoder.pos_emb_scale is not None else 0.0
+        scale_enc    = scale_enc + pos_emb
+        scale_embd[ind,-1:,:] = scale_enc
+    
     #Stack each column
     for bidx in range(bsz):
       scale_preds[bidx] = torch.cat(scale_preds[bidx], dim=0)
@@ -540,10 +546,10 @@ class BaseDataModel(nn.Module):
     hidden_col = []
     cont_embds = []
     cont_preds = [[] for _ in range(bsz)]
-    for _ in range(self.max_series_blocks):
+    for sidx in range(self.max_series_blocks):
       cont_embd = torch.zeros([bsz, 1, self.emb_dim1], device=self.device, dtype=self.dtype_float)
       cont_col_preds = [[] for _ in range(bsz)]
-      for _ in range(self.max_cont_blocks):
+      for pidx in range(self.max_cont_blocks):
         h = self.decoder.dec_tf_col(
             inputs_embeds=cont_embd,
             encoder_hidden_states=dec_hidden_col
@@ -560,7 +566,9 @@ class BaseDataModel(nn.Module):
           cont_pred   = torch.sigmoid(cont_logits)
 
           cont_enc    = self.encoder.cont_encoder['continuous'][head_name](cont_pred)
-          cont_embd[ind,-1:, :] = cont_enc
+          pos_emb     = self.encoder.pos_emb_cont[:,sidx,pidx:pidx+1,:] if self.encoder.pos_emb_cont is not None else 0.0
+          
+          cont_embd[ind,-1:, :] = cont_enc + pos_emb
 
           #Collect predictions
           for idx, pred in zip(ind, cont_pred):

@@ -17,8 +17,8 @@ S3_BUCKET = 'https://decoychart.s3.ap-southeast-2.amazonaws.com/weights/'
 @click.option('--config_file','-c', default='test.yaml', help='Configuration files in config folder')
 @click.option('--work','-w', default='home', help='Work environment')
 def main(config_file, work):
-  print("Downloading pretrained weights for HoneyChart Model...")
-  print("Chart Data Model       : MVQGAN")
+  print("Downloading pretrained weights for HoneyPlot Model...")
+  print("Plot Data Model        : MVQGAN")
   print("Multimodal Transformer : T5")
   print("Configuration File     : {}".format(config_file))
   
@@ -71,7 +71,7 @@ def main(config_file, work):
 
   continuous_snapshot_local = os.path.join(cfg.ckpt_dirs['continuous'], 'best_100_snapshot.pth')
   if not os.path.exists(continuous_snapshot_local):
-      print(f"Downloading Chart Data Model weights from: {continuous_snapshot_url}")
+      print(f"Downloading Plot Data Model weights from: {continuous_snapshot_url}")
       print(f"Saving to: {cfg.ckpt_dirs['continuous']}")
       wget.download(continuous_snapshot_url, continuous_snapshot_local)
   
@@ -82,7 +82,7 @@ def main(config_file, work):
       wget.download(seq_snapshot_url, seq_snapshot_local)
 
   print("Download complete.")
-  print("For evaluation across each task, please run `eval.py`")
+  print("To conduct evaluation for each task, please use `python eval.py `")
 
 if __name__ == "__main__":
   main()

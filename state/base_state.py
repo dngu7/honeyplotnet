@@ -149,6 +149,7 @@ class State:
         pass
 
   def load(self, ckpt_dirs, device_id):
+    device = 'cpu' if device_id == 'cpu' else f"cuda:{device_id}"
     
     for stage, ckpt_dir in ckpt_dirs.items():
       if self.models.get(stage) is None: continue
@@ -165,14 +166,14 @@ class State:
         if len(zero2f32_ckpts) > 0:
           f = zero2f32_ckpts[0]
           print("[stage={}] Loading zero2f32 ckpt: {}".format(stage, f))
-          snapshot = torch.load(f, map_location=f"cuda:{device_id}")
+          snapshot = torch.load(f, map_location=device)
           self.models[stage].load_state_dict(snapshot, strict=False)
 
         elif len(torch_ckpts) > 0:
           f = torch_ckpts[-1]
 
           print("[stage={}] Loading torch ckpt: {}".format(stage, f))
-          client_sd = torch.load(f, map_location=f"cuda:{device_id}")
+          client_sd = torch.load(f, map_location=device)
           self.apply_snapshot(client_sd, stage=stage)
 
         if client_sd is not None and client_sd.get('epoch') is not None and (client_sd.get('epoch') > self.epoch or stage == self.cur_stage):

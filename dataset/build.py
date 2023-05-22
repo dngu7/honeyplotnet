@@ -115,12 +115,12 @@ def select_dataset(mode, stage, root, dataset_cfg, tokenizers, dataset_name='pmc
   train_data = pickle_open(train_path)
   val_data = pickle_open(val_path)
 
-  if mode == 'generate':
-    train_ds = PmcGenerateDataset(data=train_data, tokenizer=tokenizers['seq'], **dataset_cfg)
-    val_ds   = PmcGenerateDataset(data=val_data, tokenizer=tokenizers['seq'], **val_cfg)   
-  elif stage == 'continuous':
+  if stage == 'continuous':
     train_ds = PmcContinuousDataset(data=train_data, **dataset_cfg)
     val_ds   = PmcContinuousDataset(data=val_data, **val_cfg)
+  elif mode == 'generate':
+    train_ds = PmcGenerateDataset(data=train_data, tokenizer=tokenizers.get('seq'), **dataset_cfg)
+    val_ds   = PmcGenerateDataset(data=val_data, tokenizer=tokenizers.get('seq'), **val_cfg)   
   elif stage == 'seq':
     train_ds = PmcSeqDataset(data=train_data, tokenizer=tokenizers['seq'], **dataset_cfg)
     val_ds   = PmcSeqDataset(data=val_data, tokenizer=tokenizers['seq'], **val_cfg)

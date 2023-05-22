@@ -172,7 +172,7 @@ def main(config_file, work, debug, distributed, local_rank):
   state.global_step = runner.global_step
   state.metrics = runner.metrics
 
-  for tasks in ['caption', 'categorical','series_name','axis', 'data']: 
+  for tasks in ['caption', 'categorical', 'series_name', 'axis', 'data']: 
     cfg.data.dataset.tasks = [tasks]
     runner.cfg.eval.fid = tasks == 'data'
     

@@ -28,7 +28,6 @@ class Decoder(Coder):
     dec_proj_row,
     dec_tf_col,
     dec_tf_row,
-    dec_tf_name,
     emb_dim1,
     cont_loss_fn,
     scale_loss_fn,
@@ -39,7 +38,6 @@ class Decoder(Coder):
     use_mhd,
     hypothese_bsz,
     hypothese_dim=1,
-    scale_n_head=1,
     device='cuda:0', 
     debug=False,
     ):
@@ -47,7 +45,6 @@ class Decoder(Coder):
 
     self.dec_tf_col = dec_tf_col
     self.dec_tf_row = dec_tf_row 
-    self.dec_tf_name = dec_tf_name
 
     self.dec_conv = dec_conv
     self.dec_proj_col = dec_proj_col
@@ -60,20 +57,9 @@ class Decoder(Coder):
     self.cont_decoder = nn.ModuleDict()
     for name in ['scale', 'continuous']:
       self.cont_decoder[name] = nn.ModuleDict()
-    if scale_n_head> 1:
-      self.cont_decoder['scale_mix'] = nn.ModuleDict()
-    
-    self.scale_n_head = scale_n_head
-    for head_name, head_dim in SCALE_DIMS[norm_mode].items():
 
-      #use mcl for scale decoder
-      self.cont_decoder['scale'][head_name] = nn.ModuleList([nn.Linear(emb_dim1, head_dim) for _ in range(scale_n_head)])
-      if scale_n_head> 1:
-        self.cont_decoder['scale_mix'][head_name] = nn.Sequential(
-            nn.Linear(emb_dim1, emb_dim1),
-            nn.ReLU(),
-            nn.Linear(emb_dim1, scale_n_head)
-          )
+    for head_name, head_dim in SCALE_DIMS[norm_mode].items():
+      self.cont_decoder['scale'][head_name] = nn.Linear(emb_dim1, head_dim)
 
     for head_name, head_dim in REG_DIMS.items():
       self.cont_decoder['continuous'][head_name] = nn.Linear(emb_dim1, head_dim)
@@ -110,53 +96,53 @@ class Decoder(Coder):
 
     if cond is not None:
       y_hat = torch.cat([cond, y_hat], dim=1)
+    print("y_hat    ", y_hat.shape)
 
     dec_hidden_col, dec_hidden_row = self.decode_y_hat(y_hat)
 
-    if self.dec_tf_name == 'gpt':
-      hidden_col = self.dec_tf_col(dec_hidden_col)
-      hidden_row = self.dec_tf_row(dec_hidden_row)
+    if self.use_mhd and wta_idx is not None:
+      repeat_frame = make_repeat_frame(scale_embd, hypo_bsz=self.hypothese_bsz)
+      scale_embd = scale_embd.unsqueeze(self.hypothese_dim).repeat(repeat_frame)
+      scale_embd = torch.flatten(scale_embd, start_dim=0, end_dim=1)
 
-    elif self.dec_tf_name == 't5_decoder':
+      repeat_frame = make_repeat_frame(scale_mask, hypo_bsz=self.hypothese_bsz)
+      scale_mask = scale_mask.unsqueeze(self.hypothese_dim).repeat(repeat_frame)
+      scale_mask = torch.flatten(scale_mask, start_dim=0, end_dim=1)
 
-      if self.use_mhd and wta_idx is not None:
-        repeat_frame = make_repeat_frame(scale_embd, hypo_bsz=self.hypothese_bsz)
-        scale_embd = scale_embd.unsqueeze(self.hypothese_dim).repeat(repeat_frame)
-        scale_embd = torch.flatten(scale_embd, start_dim=0, end_dim=1)
+      repeat_frame = make_repeat_frame(cont_embd, hypo_bsz=self.hypothese_bsz)
+      cont_embd = cont_embd.unsqueeze(self.hypothese_dim).repeat(repeat_frame)
+      cont_embd = torch.flatten(cont_embd, start_dim=0, end_dim=1)
 
-        repeat_frame = make_repeat_frame(scale_mask, hypo_bsz=self.hypothese_bsz)
-        scale_mask = scale_mask.unsqueeze(self.hypothese_dim).repeat(repeat_frame)
-        scale_mask = torch.flatten(scale_mask, start_dim=0, end_dim=1)
+      repeat_frame = make_repeat_frame(cont_mask, hypo_bsz=self.hypothese_bsz)
+      cont_mask = cont_mask.unsqueeze(self.hypothese_dim).repeat(repeat_frame)
+      cont_mask = torch.flatten(cont_mask, start_dim=0, end_dim=1)
 
-        repeat_frame = make_repeat_frame(cont_embd, hypo_bsz=self.hypothese_bsz)
-        cont_embd = cont_embd.unsqueeze(self.hypothese_dim).repeat(repeat_frame)
-        cont_embd = torch.flatten(cont_embd, start_dim=0, end_dim=1)
+    print("scale_embd    ", scale_embd.shape, scale_mask.shape)
+    print("dec_hidden_row", dec_hidden_row.shape)
+    hidden_row = self.dec_tf_row(
+      inputs_embeds=scale_embd,
+      attention_mask=scale_mask,
+      encoder_hidden_states=dec_hidden_row
+    ).last_hidden_state
+    print("hidden_row   ", hidden_row.shape)
 
-        repeat_frame = make_repeat_frame(cont_mask, hypo_bsz=self.hypothese_bsz)
-        cont_mask = cont_mask.unsqueeze(self.hypothese_dim).repeat(repeat_frame)
-        cont_mask = torch.flatten(cont_mask, start_dim=0, end_dim=1)
+    print("cont_embd     ", cont_embd.shape, cont_mask.shape)
+    print("dec_hidden_col", dec_hidden_col.shape)
+    row_len = cont_embd.size(1)
+    hidden_col = []
+    for ridx in range(row_len):
+      row_cont_embd = cont_embd[:, ridx,:]
+      row_cont_mask = cont_mask[:, ridx,:]
 
-
-      hidden_row = self.dec_tf_row(
-        inputs_embeds=scale_embd,
-        attention_mask=scale_mask,
-        encoder_hidden_states=dec_hidden_row
+      h = self.dec_tf_col(
+        inputs_embeds=row_cont_embd,
+        attention_mask=row_cont_mask,
+        encoder_hidden_states=dec_hidden_col
       ).last_hidden_state
-        
-      row_len = cont_embd.size(1)
-      hidden_col = []
-      for ridx in range(row_len):
-        row_cont_embd = cont_embd[:, ridx,:]
-        row_cont_mask = cont_mask[:, ridx,:]
-
-        h = self.dec_tf_col(
-          inputs_embeds=row_cont_embd,
-          attention_mask=row_cont_mask,
-          encoder_hidden_states=dec_hidden_col
-        ).last_hidden_state
-        hidden_col += [h]
-      
-      hidden_col = torch.stack(hidden_col, dim=1)
+      hidden_col += [h]
+    
+    hidden_col = torch.stack(hidden_col, dim=1)
+    print("hidden_col   ", hidden_col.shape)
 
     col_logit, row_logit, tab_loss, tab_logs = self.decode_tab_shape(
       hidden_col, hidden_row, labels, wta_idx=wta_idx, chart_type_dict=chart_type_dict)
@@ -194,7 +180,6 @@ class Decoder(Coder):
     dec_hidden_col  = self.dec_proj_col(h)
     dec_hidden_row  = self.dec_proj_row(h)
     return dec_hidden_col, dec_hidden_row
-
 
   def decode_tab_shape(self, hidden_col, hidden_row, labels=None, wta_idx=None, chart_type_dict=None):
     '''
@@ -278,7 +263,7 @@ class Decoder(Coder):
   def decode_continuous(self, hidden_col, hidden_row, chart_type_dict, labels=None, wta_idx=None):
     '''
     Predict continuous values for each row and column
-      1. Prepend each column prediction with the particular row
+    Prepend each column prediction with the particular row
     '''
 
     ##Check if latten
@@ -287,7 +272,6 @@ class Decoder(Coder):
     if self.use_mhd and wta_idx is not None:
       hidden_row = unflat_tensor(hidden_row, self.hypothese_bsz)
       hidden_col = unflat_tensor(hidden_col, self.hypothese_bsz)
-
 
     total_loss = torch.tensor(0.0, device=self.device, dtype=self.dtype_float)
     all_predictions = [[] for _ in range(hidden_col.size(0))]
@@ -389,10 +373,8 @@ class Decoder(Coder):
     #Ensure all heads are used for torchrun
     for head_name, head in self.cont_decoder['scale'].items():
       if head_name not in chart_type_dict:
-        for h in head:
-          total_loss += (h(hidden_row)* 0).sum()
+        total_loss += (head(hidden_row)* 0).sum()
           
-
     for head_name, ind in chart_type_dict.items():
 
       hid_row = hidden_row[ind, :, :]
@@ -400,53 +382,22 @@ class Decoder(Coder):
       if self.use_mhd and wta_idx is not None:
         hid_row = torch.flatten(hid_row, start_dim=0, end_dim=1)
 
-      #### Incorporate MCL decoder
-      scale_logits = []
-      for hidx in range(self.scale_n_head):
+      scale_logit  = self.cont_decoder['scale'][head_name](hid_row)
+      scale_logit  = self.dim_wise_relu(scale_logit, head_name=head_name, decoder_name='scale')
 
-        scale_logit  = self.cont_decoder['scale'][head_name][hidx](hid_row)
-        scale_logit  = self.dim_wise_relu(scale_logit, head_name=head_name, decoder_name='scale')
+      if labels is not None:
+        ## Compute loss
 
-        scale_logits   += [scale_logit]
-
-      #### Run mixture
-      if self.scale_n_head > 1:
-        mix_logits    = self.cont_decoder['scale_mix'][head_name](hid_row)
-
-      best_scale_pred = torch.zeros_like(scale_logits[0]) 
-      if labels is None:
-        if self.scale_n_head == 1:
-          best_scale_pred = scale_logits[0]
-        else:
-          if greedy:
-            mix_idx = torch.argmax(mix_logits, dim=-1)
-          else:
-            #mix_prob = torch.softmax(mix_logits, dim=-1).to(torch.float32) 
-            mix_idx = Categorical(logits=mix_logits.to(torch.float32)).sample()
-
-          for hidx in range(self.scale_n_head):
-            scale_pred = scale_logits[hidx]
-            mix_eq = torch.where(mix_idx == hidx, 1, 0).unsqueeze(-1)
-            best_scale_pred = scale_pred * mix_eq + best_scale_pred * (1 - mix_eq)
-
-      else:
-        #Compute loss
-
-        #Minimise the neg log prob of the mixture
-        if self.scale_n_head > 1:
-          mix_log_prob  = -F.log_softmax(mix_logits, dim=-1)
-
-        #Collect labels and mask
+        # Collect labels and mask
         label = torch.stack([l for idx, l in enumerate(cd_label['scale']['inputs_embeds']) if idx in ind], dim=0).to(self.device)
         
         mask = torch.stack([l for idx, l in enumerate(cd_label['scale']['attention_mask']) if idx in ind], dim=0).to(self.device)
-        pad_label_len = scale_logits[0].size(1) - label.size(1)
+        pad_label_len = scale_logit.size(1) - label.size(1)
         assert pad_label_len >= 0, "Targets contain length={} larger than max={} | tensor shape = label: {} logits: {}".format(
-          label.size(1), scale_logits[0].size(1), label.shape, scale_logits[0].shape
+          label.size(1), scale_logit.size(1), label.shape, scale_logit.shape
         )
         pad_label = torch.zeros((label.size(0), pad_label_len, label.size(-1)), device=self.device, dtype=self.dtype_float)
         pad_mask  = torch.zeros((label.size(0), pad_label_len), device=self.device, dtype=self.dtype_float)
-  
 
         label = torch.cat([label, pad_label], dim=1)
         mask  = torch.cat([mask, pad_mask], dim=1)
@@ -455,53 +406,24 @@ class Decoder(Coder):
         #Prevents div by zero
         counts = torch.where(counts == 0, torch.tensor(0.0, device=self.device, dtype=self.dtype_float), 1/counts)
 
-        # [Batch size, seq length]
-        min_dist_loss = torch.ones_like(label).mean(-1) * 10.0
-        min_rec_error = torch.ones_like(label).mean(-1) * 1000.0
+        if self.use_mhd and wta_idx is not None: #, "Must provide winner idx for this"
+          unflat_scale_logit = unflat_tensor(scale_logit, self.hypothese_bsz)
+          scale_logit = get_win_hypo(unflat_scale_logit, wta_idx[ind])
 
-        wta_loss = torch.ones_like(label).mean(-1)
+        #Compute distance loss
+        dist_loss = self.scale_loss_fn(scale_logit, label, reduction='none')
+        dist_loss = torch.clip(dist_loss, min=-1e2, max=1e2)
+        dist_loss = dist_loss.mean(-1) * mask
 
-        for pidx, scale_pred in enumerate(scale_logits):
-          if self.use_mhd and wta_idx is not None: #, "Must provide winner idx for this"
-              unflat_scale_logit = unflat_tensor(scale_pred, self.hypothese_bsz)
-              scale_pred = get_win_hypo(unflat_scale_logit, wta_idx[ind])
+        min_dist_loss   = dist_loss  
 
-          #Compute distance loss
-          _dist_loss = self.scale_loss_fn(scale_pred, label, reduction='none')
-          _dist_loss = torch.clip(_dist_loss, min=-1e2, max=1e2)#, min=torch.tensor(-1e2), max=torch.tensor(1e2))
-          dist_loss = _dist_loss.mean(-1)  * mask
-
-          #Save metrics
-          rec_error = F.mse_loss(scale_pred.detach(), label, reduction='none').detach()
-          rec_error = rec_error.mean(-1)  * mask
-
-          #### SWTA loss
-          lt = torch.where(dist_loss < min_dist_loss, 1, 0)
-          lt_ = lt.unsqueeze(-1)
-
-          min_dist_loss   = dist_loss  * lt  + min_dist_loss   * (1 - lt)
-          best_scale_pred = scale_pred * lt_ + best_scale_pred * (1 - lt_)
-          min_rec_error   = rec_error  * lt  + min_rec_error   * (1 - lt)
-
-          if self.scale_n_head > 1:
-            lprob = mix_log_prob[:, :, pidx]
-            lprob = lprob * mask
-            wta_loss = lprob * lt + wta_loss * (1. - lt)
-
-        if self.scale_n_head > 1:
-          loss = wta_loss * min_dist_loss
-        else:
-          loss = min_dist_loss
-
-        loss = (loss.sum(-1) * counts).mean(-1)
+        loss = (min_dist_loss.sum(-1) * counts).mean(-1)
         total_loss += loss.mean()
 
-        #Save for logging
-        mse_error = (min_rec_error.sum(-1) * counts)
-        logs[head_name] = mse_error.detach().cpu()
+        logs[head_name] = loss.detach().cpu()
 
       #Cannot stack because last dimension can vary by chart type
-      for idx, pred in zip(ind, best_scale_pred):
+      for idx, pred in zip(ind, scale_logit):
         all_predictions[idx] = pred
     
     assert all(p is not None for p in all_predictions), "One of scale predictions not recorded."

@@ -96,10 +96,8 @@ class MHDropoutNetRandom1D(nn.Module):
         repeat_frame[self.hypothese_dim] = hypothese_count
         output_shape = [bsz, hypothese_count, seq_len, self.out_dim]
 
-        
         if self.norm_1 is not None:
             x = self.norm_1(x)
-
 
         #Repeat for single forward pass sampling
         x_repeat = x.unsqueeze(self.hypothese_dim).repeat(repeat_frame)

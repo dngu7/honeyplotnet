@@ -1,15 +1,15 @@
-# PyTorch Implementation of "HoneyChart Model"
+# PyTorch Implementation of "HoneyPlotNet"
 
-HoneyChart Model is a deep learning architecture that generates realistic and semantically consistent charts for honeyfiles.
-Our approach is to train a multimodal Transformer language model and multi-head vector quantization autoencoder to generate different components of a honeychart based on the local document text and  caption.
+HoneyPlotNet is a deep learning architecture that generates realistic and semantically consistent charts for honeyfiles.
+Our approach is to train a multimodal Transformer language model and multi-head vector quantization autoencoder to generate different components of a honeyplot based on the local document text and  caption.
 
 ### Software Requirements
 
 This codebase was built using Python 3.7 and PyTorch 1.12.1. Use the following script to build a virtual env and install required packages.
 
 ```
-python3.7 -m venv $HOME/envs/honeycharts
-source $HOME/envs/honeycharts/bin/activate
+python3.7 -m venv $HOME/envs/honeyplots
+source $HOME/envs/honeyplots/bin/activate
 pip install -U pip
 
 # See https://pytorch.org/get-started/previous-versions/ 
@@ -70,7 +70,7 @@ See official guide on [Pytorch Distributed](https://pytorch.org/docs/stable/dist
 
 
 ### License
-Copyright © __________________________. This work has been supported by __________________________. We are currently tracking the impact __________________________ funded research. If you have used this code/data in your project, please contact us at __________________________ to let us know.
+Copyright © __________________________. This work has been supported by __________________________. 
 
 ### Citations
 Please cite our paper, if use this codebase. Thank you.

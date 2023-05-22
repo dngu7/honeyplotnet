@@ -74,14 +74,14 @@ class Encoder(Coder):
 
   def forward(self,inputs):
         
-    ### Shape into sequence
+    # Shape into sequence
     encoder_input, _, loss = self.prepare_encoder_input(inputs)
     
-    ### Input through transformer (t5 or gpt)
+    # Input through transformer
     if self.enc_tf is not None:
       encoder_output = self.enc_tf(encoder_input)
 
-    ### Downsample encoder inputs
+    # Downsample encoder inputs
     encoder_output = self.enc_conv(encoder_output)
 
     return encoder_output, loss
@@ -171,7 +171,6 @@ class Encoder(Coder):
         
       #Loop through each row and encode values
       for s_idx in range(row_len):
-
         data_x     = cont_x[:, s_idx, :]
         data_mask  = mask[:, s_idx, :].unsqueeze(-1)
         cont_embd[ind, s_idx, :] = self.cont_encoder['continuous'][head_name](data_x) * data_mask
@@ -229,14 +228,13 @@ class Encoder(Coder):
       scale_enc = self.cont_encoder['scale'][head_name](scale_x) 
       series_count = scale_enc.size(1)
 
-
       scale_enc    = scale_enc + (self.pos_emb_scale[:,:series_count,:] if self.pos_emb_scale is not None else 0.0)
 
       scale_m    = scale_mask[ind, :].unsqueeze(-1)
       scale_enc *= scale_m
       scale_embd[ind, :, :]  = scale_enc
     
-    #Ensure all heads are used for torchrun
+    #Ensure all heads contributes to the loss
     total_loss = torch.tensor(0.0, device=self.device, dtype=self.dtype_float)
     for head_name, head in self.cont_encoder['scale'].items():
       if head_name not in chart_type_dict:
@@ -247,6 +245,5 @@ class Encoder(Coder):
     if pad_len is not None and isinstance(pad_len, int):
       scale_embd = pad_vector(scale_embd, pad_len, pad_dim, self.device, self.dtype_float)
       scale_mask = pad_vector(scale_mask, pad_len, pad_dim, self.device, self.dtype_float)
-
 
     return scale_embd, scale_mask, total_loss

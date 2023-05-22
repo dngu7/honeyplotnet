@@ -52,7 +52,6 @@ class GenRunner(ChartTextRunner):
       models['seq'].module.set_output(mode)
     else:
       models['seq'].set_output(mode) 
-    
 
   def generate_continuous(self, cb_ind1, cb_ind2, ct_idx, models, tokenizers):
     for m in models.values():
@@ -66,6 +65,7 @@ class GenRunner(ChartTextRunner):
           cont_module = models['continuous'].module
         else:
           cont_module = models['continuous']
+
 
         samples = cont_module.reconstruct_from_indices(
           cb_ind1=cb_ind1, 
@@ -97,8 +97,6 @@ class GenRunner(ChartTextRunner):
     for model in models.values():
       model.eval()
     
-    all_tasks =  ['caption', 'context']
-
     #Only run captions
     task = 'caption'
     task_str = TASK2PREPEND[task]

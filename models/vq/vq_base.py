@@ -32,7 +32,7 @@ class VectorQuantizer(torch.nn.Module):
         # init function called during first pass.
         self.k_sum = None
         self.k_elem = None
-        self.register_buffer('embeddings', torch.zeros(self.n_emb, self.emb_dim).cuda())
+        self.register_buffer('embeddings', torch.zeros(self.n_emb, self.emb_dim))
 
     def _tile(self, x):
         d, ew = x.shape
@@ -87,7 +87,6 @@ class VectorQuantizer(torch.nn.Module):
         quantized = F.embedding(flattened, self.embeddings)
         
         quantized = torch.reshape(quantized, output_shape)
-        quantized = quantized.transpose(self.chn_dim, -1)
         return quantized
 
     def preprocess(self, x):

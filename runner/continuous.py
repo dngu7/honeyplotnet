@@ -266,9 +266,12 @@ class ContinuousRunner(BaseRunner):
       with torch.no_grad():
         with self.autocast_smart_context_manager():
           samples = models['continuous'].reconstruct_from_indices(
-              ct_idx=ct_idx, cb_ind1=cb_ind1, cb_ind2=cb_ind2)
-
-      #self.to_vega_json(samples, prefix=metric_key_prefix, step=step, epoch=epoch)
+              ct_idx=ct_idx, 
+              cb_ind1=cb_ind1, 
+              cb_ind2=cb_ind2,
+              hypo_count=self.cfg.eval.hypo_count, 
+              hypo_bsz=self.cfg.eval.hypo_bsz
+              )
 
     if self.use_torch_dist:
       dist.barrier()

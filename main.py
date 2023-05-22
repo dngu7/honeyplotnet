@@ -134,6 +134,16 @@ def main(config_file, mode, stage, work, debug, distributed, local_rank):
     os.makedirs(stage_sample_dir, exist_ok=True)
     cfg.sample_dirs[s] = stage_sample_dir
 
+  gen_sample_dir = os.path.join(cfg.sample_dir, 'generate')
+  os.makedirs(gen_sample_dir, exist_ok=True)
+
+  cfg.sample_dirs['generate'] = {}
+  cfg.sample_dirs['generate']['base'] = gen_sample_dir
+  
+  for d in ['json','mpl']:
+    new_dir = os.path.join(gen_sample_dir, d)
+    os.makedirs(new_dir, exist_ok=True)
+    cfg.sample_dirs['generate'][d] = new_dir
 
   ###########################################
   cfg = setup_gpu_cfg(cfg)
@@ -225,7 +235,7 @@ def main(config_file, mode, stage, work, debug, distributed, local_rank):
       train_loader.batch_sampler.sampler.set_epoch(epoch)
 
     if mode == 'generate':
-      runner.eval(val_loader, models, tokenizers)
+      runner.generate(val_loader, models, tokenizers)
     elif mode == 'train':
       runner.train(train_loader, models, tokenizers, opts, schs)
       
