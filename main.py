@@ -96,8 +96,6 @@ def main(config_file, mode, stage, work, debug, distributed, local_rank):
 
   if cfg.exp_name is None:
     cfg.exp_name = '_'.join([config_file.replace('.yaml',''), str(cfg.seed)])
-  else:
-    cfg.exp_name = cfg.exp_name
   
   ###########################################
   # Setup directories

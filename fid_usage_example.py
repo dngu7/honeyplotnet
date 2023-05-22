@@ -1,3 +1,22 @@
+# ---------------------------------------------------------------
+# Copyright (c) __________________________ 2023.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+# ---------------------------------------------------------------
+
+'''
+
+This file demonstrates how to run the FID metrics presented in the paper.
+
+The `init_fid_model` automatically downloads the pre-trained weights from an AWS bucket a
+and creates a new model.
+
+The "Example Usage" code block below shows how to calculate FID with your own model. 
+The inputs to the FID model need to be in a compatible format.
+'''
+
+
 import click
 import os
 from utils import load_cfg

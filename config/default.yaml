@@ -40,7 +40,7 @@ model:
   active: ['continuous']
   seperate_data_task: True
   seq:
-    opt_mode: 1 #Stage 1: text only, Stage 2: Data only, Stage0: everything
+    opt_mode: 1 #Stage 1: text only, Stage 2: Data only, Stage 0: Both
     freeze_encoder: False
     decoder2_num_layers: 8
     hf_model: 

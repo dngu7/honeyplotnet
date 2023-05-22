@@ -21,24 +21,30 @@ pip install -r requirements.txt
 ### Hardware Requirements
 Training was conducted using a single A100 node with 4 GPUs (80GB). Each of the three stages required approximately 8-12 hours.
 
-The trained weights for HCM-MVQGAN-T5 can be downloaded using`python download_weights.py`.
+The trained weights for our best model (MVQGAN-T5) can be downloaded using `python download_weights.py`.
 
 ### Setup
 
 #### Default Configuration
 In /config/default.yaml, ensure that 
-* exp_dir.home -- points to your experiment directory
-* data.path.home -- points to your dataset directory  
+* `exp_dir.home` -- points to your experiment directory
+* `data.path.home` -- points to your dataset directory  
 
 All other configurations inherit properties from default.yaml.
 
-
 #### Datasets
 The dataset combines charts and captions from PubMedCentral. The chart data was originally from the ICPR 2020 chart detection competition.
-This is automatically downloaded from a S3 bucket during training. It will be saved in your "data.path.home" config path.
+This is automatically downloaded from a S3 bucket during training. It will be saved in your `data.path.home` config path.
 
 ### Training 
 The entry point is main.py which requires specification of mode=['train','eval','generate],  stage=['continuous','seq']. 
+
+`continuous` stage trains the Plot Data Model (PDM).
+
+`seq` stage trains the multimodal Transformer with two decoders. Each decoder is trained seperately and is controled using the `model.seq.opt_mode` config setting. Each decoder must be trained in this order to replicate results.
+* The first decoder is trained on language tokens (`model.seq.opt_mode: 1`). This freezes the weights of the second decoder.
+* The second decoder is trained on data tokens (`model.seq.opt_mode: 2`). This freezes the shared encoder and language decoder.
+
 
 The following command works for a single GPU. 
 ```
@@ -58,16 +64,15 @@ torchrun --nnodes=<NNODES> \
     main.py -c <CONFIG> -s <STAGE> -m <MODE>
 ```
 
+See official guide on [Pytorch Distributed](https://pytorch.org/docs/stable/distributed.html) for more information.
+
 ### Evaluation
 
-Once training is complete, you can conduct evaluation across all tasks in one run using eval.py.
+Once training is complete for all stages, you can conduct evaluation across all tasks in one run using eval.py.
 ```
 python eval.py -c <CONFIG> 
 ``` 
 Use the config file *mvqgan_t5.yaml* to replicate results in paper.
-
-See official guide on [Pytorch Distributed](https://pytorch.org/docs/stable/distributed.html) for more information.
-
 
 ### License
 Copyright © __________________________. This work has been supported by __________________________. 
