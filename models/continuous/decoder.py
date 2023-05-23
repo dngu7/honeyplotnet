@@ -136,7 +136,6 @@ class Decoder(Coder):
       hidden_col += [h]
     
     hidden_col = torch.stack(hidden_col, dim=1)
-    print("hidden_col   ", hidden_col.shape)
 
     col_logit, row_logit, tab_loss, tab_logs = self.decode_tab_shape(
       hidden_col, hidden_row, labels, wta_idx=wta_idx, chart_type_dict=chart_type_dict)
