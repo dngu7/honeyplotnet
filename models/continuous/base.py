@@ -528,7 +528,7 @@ class BaseDataModel(nn.Module):
       for head_name, ind in chart_type_dict.items():
         scale_x = torch.stack([v[-1] for bidx, v in enumerate(scale_preds) if bidx in ind], dim=0) #[:, -1:, :]
         scale_enc   = self.encoder.cont_encoder['scale'][head_name](scale_x)
-        pos_emb = self.encoder.pos_emb_scale[:,sidx:sidx + 1,:] if self.encoder.pos_emb_scale is not None else 0.0
+        pos_emb      = self.encoder.pos_emb_scale[:,sidx:sidx + 1,:] if self.encoder.pos_emb_scale is not None else 0.0
         scale_enc    = scale_enc + pos_emb
         scale_embd[ind,-1:,:] = scale_enc
     

@@ -96,7 +96,6 @@ class Decoder(Coder):
 
     if cond is not None:
       y_hat = torch.cat([cond, y_hat], dim=1)
-    print("y_hat    ", y_hat.shape)
 
     dec_hidden_col, dec_hidden_row = self.decode_y_hat(y_hat)
 
@@ -117,17 +116,12 @@ class Decoder(Coder):
       cont_mask = cont_mask.unsqueeze(self.hypothese_dim).repeat(repeat_frame)
       cont_mask = torch.flatten(cont_mask, start_dim=0, end_dim=1)
 
-    print("scale_embd    ", scale_embd.shape, scale_mask.shape)
-    print("dec_hidden_row", dec_hidden_row.shape)
     hidden_row = self.dec_tf_row(
       inputs_embeds=scale_embd,
       attention_mask=scale_mask,
       encoder_hidden_states=dec_hidden_row
     ).last_hidden_state
-    print("hidden_row   ", hidden_row.shape)
 
-    print("cont_embd     ", cont_embd.shape, cont_mask.shape)
-    print("dec_hidden_col", dec_hidden_col.shape)
     row_len = cont_embd.size(1)
     hidden_col = []
     for ridx in range(row_len):
