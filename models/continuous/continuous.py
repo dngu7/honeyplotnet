@@ -25,7 +25,7 @@ class ContinuousModel(ScaleModel):
     col_counts = tab_shape['col']
 
     max_rows = min(max(row_counts), max([l.size(0) for l in cont_logits]))
-    max_cols = max(col_counts)
+    max_cols = min(max(col_counts), max([l.size(1) for l in cont_logits]))
 
     cont_embds = []
     cont_masks = []
@@ -33,9 +33,9 @@ class ContinuousModel(ScaleModel):
       row_preds = row_sample[bidx].unsqueeze(-1).unsqueeze(-1)
       col_preds = col_sample[bidx].unsqueeze(0).unsqueeze(-1)
 
-      embed = logits * row_preds[:logits.size(0), :, :]
-      embed = embed * col_preds[:, :logits.size(1), :]
-      embed = embed[:max_rows,:max_cols, :]
+      logits = logits[:max_rows,:max_cols, :]
+      embed = logits * row_preds[:max_rows, :, :]
+      embed = embed * col_preds[:, :max_cols, :]
 
       rows = min(row_counts[bidx], max_rows)
       cols = col_counts[bidx]

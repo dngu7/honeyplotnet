@@ -6,7 +6,7 @@
 # ---------------------------------------------------------------
 
 
-from ..constant import UNIQ_CHART_HEADS, CHART_TO_HEAD_IDX
+from ..constant import SCALE_DIMS, REG_DIMS, UNIQ_CHART_HEADS, CHART_TO_HEAD_IDX
 
 import torch
 import torch.nn as nn
@@ -502,10 +502,31 @@ class BaseDataModel(nn.Module):
   def generate_scale(self, dec_hidden_row, chart_type_dict):
 
     bsz = dec_hidden_row.size(0)
-    scale_embd = torch.zeros([bsz, 1, self.emb_dim1], device=self.device, dtype=self.dtype_float)
+    scale_embd = None
     scale_preds = [[] for _ in range(bsz)]
-
+    ###########################################
+    # Create starting vector
+    for head_name, ind in chart_type_dict.items():
+      head_dim = SCALE_DIMS[self.norm_mode][head_name]
+      zero_vec = torch.zeros([1, head_dim], device=self.device, dtype=self.dtype_float)
+      for bidx in ind:
+        scale_preds[bidx].append(zero_vec.clone().detach())
+    
     for sidx in range(self.max_series_blocks):
+
+      #Expand scale embd by one 
+      new_embd   = torch.zeros([bsz, 1, self.emb_dim1], device=self.device, dtype=self.dtype_float)
+      scale_embd = torch.cat([scale_embd, new_embd], dim=1) if scale_embd is not None else new_embd
+      
+      #Encode scale_pred and assign new values to embedding
+      for head_name, ind in chart_type_dict.items():
+        scale_x = torch.stack([v[-1] for bidx, v in enumerate(scale_preds) if bidx in ind], dim=0) #[:, -1:, :]
+        scale_enc   = self.encoder.cont_encoder['scale'][head_name](scale_x)
+        scale_embd[ind,-1:,:] = scale_enc
+
+      #Add positional embeddings
+      pos_emb = self.encoder.pos_emb_scale[:,sidx:sidx + 1,:] if self.encoder.pos_emb_scale is not None else 0.0
+      scale_embd[:,-1:,:] += pos_emb
 
       # Generate rows starting with zeros
       hidden_state = self.decoder.dec_tf_row(
@@ -513,24 +534,11 @@ class BaseDataModel(nn.Module):
         encoder_hidden_states=dec_hidden_row
       ).last_hidden_state
 
-      # Collect predictions from multi-head group
       scale_pred, _, _ = self.decoder.decode_scale(hidden_state, chart_type_dict)
 
-      #Collect only the last prediction of each output
+      #Collect only the last prediction for each instance
       for bidx, p in enumerate(scale_pred):
         scale_preds[bidx].append(p[-1:, :])
-
-      #Expand scale embd by one 
-      new_embd   = torch.zeros([bsz, 1, self.emb_dim1], device=self.device, dtype=self.dtype_float)
-      scale_embd = torch.cat([scale_embd, new_embd], dim=1)
-
-      #Encode scale_pred and assign new values to embedding
-      for head_name, ind in chart_type_dict.items():
-        scale_x = torch.stack([v[-1] for bidx, v in enumerate(scale_preds) if bidx in ind], dim=0) #[:, -1:, :]
-        scale_enc   = self.encoder.cont_encoder['scale'][head_name](scale_x)
-        pos_emb      = self.encoder.pos_emb_scale[:,sidx:sidx + 1,:] if self.encoder.pos_emb_scale is not None else 0.0
-        scale_enc    = scale_enc + pos_emb
-        scale_embd[ind,-1:,:] = scale_enc
     
     #Stack each column
     for bidx in range(bsz):
@@ -539,46 +547,56 @@ class BaseDataModel(nn.Module):
     return scale_pred, hidden_state
 
   def generate_continuous(self, dec_hidden_col, chart_type_dict):
-    #1 .Create hidden column state by expanding the continuous  embedding one at a time
 
     bsz = dec_hidden_col.size(0)
 
     hidden_col = []
-    cont_embds = []
+    cont_embd = torch.zeros([bsz, self.max_series_blocks, self.max_cont_blocks, self.emb_dim1], device=self.device, dtype=self.dtype_float)
     cont_preds = [[] for _ in range(bsz)]
-    for sidx in range(self.max_series_blocks):
-      cont_embd = torch.zeros([bsz, 1, self.emb_dim1], device=self.device, dtype=self.dtype_float)
+
+    for row_idx in range(self.max_series_blocks):
+
       cont_col_preds = [[] for _ in range(bsz)]
-      for pidx in range(self.max_cont_blocks):
+
+      ###########################################
+      # Create starting vector
+      for head_name, ind in chart_type_dict.items():
+        head_dim = REG_DIMS[head_name]
+        zero_vec = torch.zeros([1, head_dim], device=self.device, dtype=self.dtype_float)
+        for bidx in ind:
+          cont_col_preds[bidx].append(zero_vec.clone().detach())
+
+      for bidx in range(self.max_cont_blocks):
+
+        ###########################################
+        # Encode vector
+        for head_name, ind in chart_type_dict.items():
+          cont_x = torch.stack([l[-1] for idx, l in enumerate(cont_col_preds) if idx in ind], dim=0).to(self.device)
+          emb    = self.encoder.cont_encoder['continuous'][head_name](cont_x)
+          cont_embd[ind,row_idx:row_idx+1,bidx:bidx+1, :] = emb.unsqueeze(1)
+
+        #Add positional embeddings to cont_embd      
+        pos_emb = self.encoder.pos_emb_cont[:,row_idx:row_idx+1,bidx:bidx+1,:] if self.encoder.pos_emb_cont is not None else 0.0
+        cont_embd[:,row_idx:row_idx+1, bidx:bidx+1, :] += pos_emb
+
+        #Create hidden state using 
         h = self.decoder.dec_tf_col(
-            inputs_embeds=cont_embd,
+            inputs_embeds=cont_embd[:,row_idx,:bidx+1, :], #Take until last
             encoder_hidden_states=dec_hidden_col
           ).last_hidden_state
-        
-        #Expand continuous embding by one 
-        new_embd  = torch.zeros([bsz, 1, self.emb_dim1], device=self.device, dtype=self.dtype_float)
-        cont_embd = torch.cat([cont_embd, new_embd], dim=1)
-        
+
         for head_name, ind in chart_type_dict.items():
-          hid_col = h[ind, :]
-          cont_logits = self.decoder.cont_decoder['continuous'][head_name](hid_col)[:, -1:, :]
-          
+          #Obtain predictions using only the last hidden state
+          cont_logits = self.decoder.cont_decoder['continuous'][head_name](h[ind, -1:, :]) 
           cont_pred   = torch.sigmoid(cont_logits)
 
-          cont_enc    = self.encoder.cont_encoder['continuous'][head_name](cont_pred)
-          pos_emb     = self.encoder.pos_emb_cont[:,sidx,pidx:pidx+1,:] if self.encoder.pos_emb_cont is not None else 0.0
-          
-          cont_embd[ind,-1:, :] = cont_enc + pos_emb
-
-          #Collect predictions
           for idx, pred in zip(ind, cont_pred):
             cont_col_preds[idx].append(pred)
-        
-      #Append only the final one
-      hidden_col += [h]
-      cont_embds += [cont_embd]
 
-      #Stack each column
+      #Append only the final hidden state
+      hidden_col += [h]
+
+      #Stack predictions
       for idx, preds in enumerate(cont_col_preds):
         p = torch.stack(preds, dim=1)
         cont_preds[idx].append(p)
@@ -587,4 +605,5 @@ class BaseDataModel(nn.Module):
       cont_preds[bidx] = torch.cat(cont_preds[bidx], dim=0)
     
     hidden_col = torch.stack(hidden_col, dim=1)
+    
     return cont_preds, hidden_col

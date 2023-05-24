@@ -59,7 +59,7 @@ class Decoder(Coder):
       self.cont_decoder[name] = nn.ModuleDict()
 
     for head_name, head_dim in SCALE_DIMS[norm_mode].items():
-      self.cont_decoder['scale'][head_name] = nn.Linear(emb_dim1, head_dim)
+      self.cont_decoder['scale'][head_name] = nn.ModuleList([nn.Linear(emb_dim1, head_dim) for _ in range(1)])
 
     for head_name, head_dim in REG_DIMS.items():
       self.cont_decoder['continuous'][head_name] = nn.Linear(emb_dim1, head_dim)
@@ -348,10 +348,7 @@ class Decoder(Coder):
     return all_predictions, total_loss, logs
 
   def decode_scale(self, hidden_row, chart_type_dict, labels=None, wta_idx=None, greedy=False):
-    '''
-    Predict scale values for each row and column
-      1. Prepend each column prediction with the particular row
-    '''
+
     if labels is not None:
       cd_label = labels['chart_data']
 
@@ -366,7 +363,7 @@ class Decoder(Coder):
     #Ensure all heads are used for torchrun
     for head_name, head in self.cont_decoder['scale'].items():
       if head_name not in chart_type_dict:
-        total_loss += (head(hidden_row)* 0).sum()
+        total_loss += (head[0](hidden_row)* 0).sum()
           
     for head_name, ind in chart_type_dict.items():
 
@@ -375,7 +372,7 @@ class Decoder(Coder):
       if self.use_mhd and wta_idx is not None:
         hid_row = torch.flatten(hid_row, start_dim=0, end_dim=1)
 
-      scale_logit  = self.cont_decoder['scale'][head_name](hid_row)
+      scale_logit  = self.cont_decoder['scale'][head_name][0](hid_row)
       scale_logit  = self.dim_wise_relu(scale_logit, head_name=head_name, decoder_name='scale')
 
       if labels is not None:
