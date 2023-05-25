@@ -21,8 +21,6 @@ pip install -r requirements.txt
 ### Hardware Requirements
 Training was conducted using a single A100 node with 4 GPUs (80GB). Each of the three stages required approximately 8-12 hours.
 
-The trained weights for our best model (MVQGAN-T5) can be downloaded using `python download_weights.py`.
-
 ### Setup
 
 #### Default Configuration

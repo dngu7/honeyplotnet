@@ -259,7 +259,7 @@ class Decoder(Coder):
     Prepend each column prediction with the particular row
     '''
 
-    ##Check if latten
+    
     is_unflat = len(hidden_col.shape) == 4 
 
     if self.use_mhd and wta_idx is not None:
@@ -348,7 +348,6 @@ class Decoder(Coder):
     return all_predictions, total_loss, logs
 
   def decode_scale(self, hidden_row, chart_type_dict, labels=None, wta_idx=None, greedy=False):
-
     if labels is not None:
       cd_label = labels['chart_data']
 
@@ -405,9 +404,8 @@ class Decoder(Coder):
         dist_loss = torch.clip(dist_loss, min=-1e2, max=1e2)
         dist_loss = dist_loss.mean(-1) * mask
 
-        min_dist_loss   = dist_loss  
 
-        loss = (min_dist_loss.sum(-1) * counts).mean(-1)
+        loss = (dist_loss.sum(-1) * counts).mean(-1)
         total_loss += loss.mean()
 
         logs[head_name] = loss.detach().cpu()
@@ -415,7 +413,6 @@ class Decoder(Coder):
       #Cannot stack because last dimension can vary by chart type
       for idx, pred in zip(ind, scale_logit):
         all_predictions[idx] = pred
-    
     assert all(p is not None for p in all_predictions), "One of scale predictions not recorded."
     return all_predictions, total_loss, logs
     
