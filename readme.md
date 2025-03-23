@@ -1,7 +1,7 @@
 # PyTorch Implementation of "HoneyPlotNet"
 
 HoneyPlotNet is a deep learning architecture that generates realistic and semantically consistent charts for honeyfiles.
-Our approach is to train a multimodal Transformer language model and multi-head vector quantization autoencoder to generate different components of a honeyplot based on the local document text and  caption.
+Our approach is to train a multimodal large language model (LLM) and multi-head vector quantization autoencoder to generate different components of a honeyplot based on the local document text and  caption.
 
 ### Software Requirements
 
