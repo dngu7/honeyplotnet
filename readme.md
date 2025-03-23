@@ -36,6 +36,8 @@ All other configurations inherit properties from default.yaml.
 The dataset combines charts and captions from PubMedCentral. The chart data was originally from the ICPR 2020 chart detection competition.
 This is automatically downloaded from a S3 bucket during training. It will be saved in your `data.path.home` config path.
 
+It can be downloaded directly from: https://decoychart.s3.ap-southeast-2.amazonaws.com/document-chart-dataset.zip
+
 ### Training 
 The entry point is main.py which requires specification of mode=['train','eval','generate],  stage=['continuous','seq']. 
 
