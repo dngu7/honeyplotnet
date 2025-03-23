@@ -38,10 +38,16 @@ This is automatically downloaded from a S3 bucket during training. It will be sa
 
 It can be downloaded directly from: https://decoychart.s3.ap-southeast-2.amazonaws.com/document-chart-dataset.zip
 
+### Pretrained weights
+
+- Continuous: https://decoychart.s3.ap-southeast-2.amazonaws.com/weights/mvqgan-t5/continuous/best_100_snapshot.pth
+- Sequential: https://decoychart.s3.ap-southeast-2.amazonaws.com/weights/mvqgan-t5/seq/best_1040_snapshot.pth
+
 ### Training 
 The entry point is main.py which requires specification of mode=['train','eval','generate],  stage=['continuous','seq']. 
 
 `continuous` stage trains the Plot Data Model (PDM).
+
 
 `seq` stage trains the multimodal Transformer with two decoders. Each decoder is trained seperately and is controled using the `model.seq.opt_mode` config setting. Each decoder must be trained in this order to replicate results.
 * The first decoder is trained on language tokens (`model.seq.opt_mode: 1`). This freezes the weights of the second decoder.
@@ -75,6 +81,9 @@ Once training is complete for all stages, you can conduct evaluation across all 
 python eval.py -c <CONFIG> 
 ``` 
 Use the config file *mvqgan_t5.yaml* to replicate results in paper.
+
+
+Responses captured from ChatGPT on May 1st 2023 can be downloaded from: https://decoychart.s3.ap-southeast-2.amazonaws.com/gpt_responses/2023-05-01.zip
 
 ### License
 Copyright © Cybersecurity Cooperative Research Centre. This work has been supported by Cybersecurity Cooperative Research Centre.
