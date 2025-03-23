@@ -73,7 +73,14 @@ python eval.py -c <CONFIG>
 Use the config file *mvqgan_t5.yaml* to replicate results in paper.
 
 ### License
-Copyright © __________________________. This work has been supported by __________________________. 
+Copyright © Cybersecurity Cooperative Research Centre. This work has been supported by Cybersecurity Cooperative Research Centre.
 
 ### Citations
 Please cite our paper, if use this codebase. Thank you.
+
+@article{nguyen2024contextual,
+  title={Contextual Chart Generation for Cyber Deception},
+  author={Nguyen, David D and Liebowitz, David and Nepal, Surya and Kanhere, Salil S},
+  journal={arXiv preprint arXiv:2404.04854},
+  year={2024}
+}

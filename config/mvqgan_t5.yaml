@@ -1,8 +1,6 @@
 ---
 exp_name: mvqgan_t5
 model:
-    hf_model: 
-      name: google/t5-v1_1-large 
   continuous_data:
     disc: 
       use: True
@@ -18,6 +16,8 @@ model:
   seq:
     opt_mode: 1 #Stage 1: text only, Stage 2: Data only, Stage0: everything
     decoder2_num_layers: 12
+    hf_model: 
+        name: google/t5-v1_1-large 
 train:
   optim:
     learning_rate: 0.0005
